@@ -68,6 +68,7 @@ class DecoderRNN(nn.Module):
 class Autoencoder(nn.Module):
     def __init__(self, hidden_size, vocabulary: Vocabulary):
         super(Autoencoder, self).__init__()
+        self.vocabulary = vocabulary
         self.encoder = EncoderRNN(len(vocabulary), hidden_size)
         self.decoder = DecoderRNN(hidden_size, vocabulary)
 
