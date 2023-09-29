@@ -1,0 +1,10 @@
+# phone-sequence data representation
+# sampling strategy: uniform over random phone sequences
+
+data:
+  sampler:
+    strategy: random-sequence
+
+  representation:
+    form: phone-sequence
+    drop_extras: true

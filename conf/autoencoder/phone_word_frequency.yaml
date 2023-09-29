@@ -1,0 +1,11 @@
+# phone-sequence data representation
+# sampling strategy: based on word unigram frequency
+
+data:
+  sampler:
+    strategy: word
+    weights: unigram
+
+  representation:
+    form: phone-sequence
+    drop_extras: true
