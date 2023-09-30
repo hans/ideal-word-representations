@@ -1,4 +1,5 @@
 *.csv
+*.pt
 data
 __pycache__
 *.pyc

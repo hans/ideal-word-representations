@@ -2,3 +2,4 @@
 
 trainer:
   batch_size: 32
+  checkpoint_path: autoencoder.pt

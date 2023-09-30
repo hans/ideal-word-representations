@@ -76,3 +76,7 @@ class Autoencoder(nn.Module):
         encoder_outputs, encoder_hidden = self.encoder(input_tensor)
         decoder_outputs, decoder_hidden, _ = self.decoder(encoder_outputs, encoder_hidden, target_tensor, max_length)
         return decoder_outputs, decoder_hidden
+    
+    def encode(self, input_tensor):
+        encoder_outputs, encoder_hidden = self.encoder(input_tensor)
+        return encoder_hidden, encoder_outputs
