@@ -80,3 +80,13 @@ class Autoencoder(nn.Module):
     def encode(self, input_tensor):
         encoder_outputs, encoder_hidden = self.encoder(input_tensor)
         return encoder_hidden, encoder_outputs
+    
+    def prepare_string(self, text: str, max_length=10):
+        words = text.strip().split(" ")
+
+        if len(words) > max_length - 2:
+            words = words[:max_length - 2]
+        input_ids = [self.vocabulary.sos_token_id] + \
+            [self.vocabulary.token2index[token] for token in words] + \
+            [self.vocabulary.eos_token_id]
+        return torch.tensor(input_ids, dtype=torch.long)
