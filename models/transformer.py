@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Union, List, Optional, Tuple
 
@@ -16,6 +17,14 @@ class SpeechClassifierOutput(ModelOutput):
     logits: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
+
+
+def drop_wav2vec_layers(model: Wav2Vec2Model, n=1) -> Wav2Vec2Model:
+    """
+    Drop the last n layers of the wav2vec encoder model. Operates in place.
+    """
+    model.encoder.layers = model.encoder.layers[:-n]
+    return model
 
 
 class Wav2Vec2ClassificationHead(nn.Module):
