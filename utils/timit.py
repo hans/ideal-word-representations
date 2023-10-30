@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 
+from datasets import Dataset
 import pandas as pd
 import soundfile as sf
 import torch
@@ -54,5 +55,39 @@ class TimitCorpus:
         return len(self.phone_vocab)
 
     @property
+    def speakers(self) -> list[str]:
+        return sorted(self.sentences_df.index.get_level_values("speaker").unique())
+
+    @property
     def num_speakers(self):
         return len(self.sentences_df.groupby("speaker"))
+    
+    def _compute_word_features(self, phon_rows):
+            return {
+                "onset": phon_rows["onset"].min(),
+                "offset": phon_rows["offset"].max(),
+                "phones": [{"phone": phon_row.phone,
+                            "onset": phon_row.onset,
+                            "offset": phon_row.offset}
+                           for phon_row in phon_rows.itertuples()]
+            }
+
+    def _yield_dataset(self):
+        all_speakers = self.speakers
+
+        for (dialect, speaker, sentence_idx), audio in self.sounds.items():
+            phones = self._df.loc[(dialect, speaker, sentence_idx)]
+
+            yield {
+                "input_values": audio,
+
+                "words": phones.groupby("word_idx").apply(self._compute_word_features).tolist(),
+
+                "speaker": speaker,
+                "speaker_idx": all_speakers.index(speaker),
+                "dialect": dialect,
+                "sentence_idx": sentence_idx,
+            }
+
+    def to_dataset(self) -> Dataset:
+        return Dataset.from_generator(self._yield_dataset)

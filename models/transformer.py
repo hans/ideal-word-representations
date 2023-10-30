@@ -27,6 +27,46 @@ def drop_wav2vec_layers(model: Wav2Vec2Model, n=1) -> Wav2Vec2Model:
     return model
 
 
+class TilingWordFeatureExtractor:
+    """
+    Extracts word-level features from TIMIT input and returns a compressed description
+    of time series spans.
+    """
+
+    def __init__(self, all_phones):
+        self.all_phones = sorted(all_phones)
+
+        self.all_diphones = sorted(set(
+            phone1 + phone2
+            for phone1 in self.all_phones
+            for phone2 in self.all_phones
+        ))
+
+        self.phone2idx = {phone: i for i, phone in enumerate(self.all_phones)}
+        self.diphone2idx = {diphone: i for i, diphone in enumerate(self.all_diphones)}
+
+    @property
+    def num_features(self):
+        return len(self.diphone2idx)
+
+    def _extract_features(self, timit_word):
+        """
+        Extract diphone features.
+        """
+        print(timit_word)
+        return [self.diphone2idx[phone1["phone"] + phone2["phone"]]
+                for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
+
+    def __call__(self, timit_item) -> list[Tuple[int, int, int]]:
+        ret = []
+
+        for word in timit_item["words"]:
+            for feature in self._extract_features(word):
+                ret.append((word["onset"], word["offset"], feature))
+        
+        return ret
+
+
 class Wav2Vec2ClassificationHead(nn.Module):
     """Head for wav2vec classification task."""
 
@@ -161,6 +201,7 @@ class DataCollator:
     padding: Union[bool, str] = True
     max_length: Optional[int] = None
     max_length_labels: Optional[int] = None
+    num_labels: int = 2
     pad_to_multiple_of: Optional[int] = None
     pad_to_multiple_of_labels: Optional[int] = None
 
@@ -168,7 +209,8 @@ class DataCollator:
         # split inputs and labels since they have to be of different lengths and need
         # different padding methods
         input_features = [{"input_values": feature["input_values"]} for feature in features]
-        label_features = [feature["labels"] for feature in features]
+        # For classification
+        # label_features = [feature["labels"] for feature in features]
 
         batch = self.processor.pad(
             input_features,
@@ -178,7 +220,25 @@ class DataCollator:
             return_tensors="pt",
         )
 
-        batch["labels"] = torch.tensor(label_features, dtype=torch.long)
+        # For frame labeling
+        label_features = [torch.zeros((len(feature["input_values"]), self.num_labels), dtype=torch.long)
+                          for feature in features]
+        for i, feature in enumerate(features):
+            for onset, offset, label in feature["phone_targets"]:
+                label_features[i][onset:offset, label] = 1
+        label_features = [{"input_values": feature} for feature in label_features]
+        # import ipdb; ipdb.set_trace()
+
+        batch["labels"] = self.processor.pad(
+            label_features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+        )
+
+        # batch["labels"] = torch.tensor(label_features, dtype=torch.long)
+
         # with self.processor.as_target_processor():
         #     labels_batch = self.processor.pad(
         #         label_features,
