@@ -290,6 +290,8 @@ class DataCollator:
                 label_features[i][onset:offset, label] = 1
         label_features = [{"phones": feature} for feature in label_features]
 
+        # TODO mask loss on padding outputs
+
         my_padder = PhoneticTargetFeatureExtractor(
             self.num_labels,
             sampling_rate=self.processor.feature_extractor.sampling_rate,
