@@ -9,6 +9,7 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers.file_utils import ModelOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2Model, Wav2Vec2PreTrainedModel
 from transformers.models.wav2vec2.processing_wav2vec2 import Wav2Vec2Processor
+from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
 
 
 @dataclass
@@ -37,7 +38,7 @@ class TilingWordFeatureExtractor:
         self.all_phones = sorted(all_phones)
 
         self.all_diphones = sorted(set(
-            phone1 + phone2
+            (phone1, phone2)
             for phone1 in self.all_phones
             for phone2 in self.all_phones
         ))
@@ -47,15 +48,16 @@ class TilingWordFeatureExtractor:
 
     @property
     def num_features(self):
-        return len(self.diphone2idx)
+        # return len(self.diphone2idx)
+        return len(self.phone2idx)
 
     def _extract_features(self, timit_word):
         """
         Extract diphone features.
         """
-        print(timit_word)
-        return [self.diphone2idx[phone1["phone"] + phone2["phone"]]
-                for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
+        # return [self.diphone2idx[phone1["phone"], phone2["phone"]]
+        #         for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
+        return [self.phone2idx[phone["phone"]] for phone in timit_word["phones"]]
 
     def __call__(self, timit_item) -> list[Tuple[int, int, int]]:
         ret = []
@@ -63,6 +65,48 @@ class TilingWordFeatureExtractor:
         for word in timit_item["words"]:
             for feature in self._extract_features(word):
                 ret.append((word["onset"], word["offset"], feature))
+        
+        return ret
+
+
+class TilingWordFeatureExtractor2:
+    """
+    Extracts word-level features from TIMIT input and returns a compressed description
+    of time series spans.
+    """
+
+    def __init__(self, all_phones):
+        self.all_phones = sorted(all_phones)
+
+        self.all_diphones = sorted(set(
+            (phone1, phone2)
+            for phone1 in self.all_phones
+            for phone2 in self.all_phones
+        ))
+
+        self.phone2idx = {phone: i for i, phone in enumerate(self.all_phones)}
+        self.diphone2idx = {diphone: i for i, diphone in enumerate(self.all_diphones)}
+
+    @property
+    def num_features(self):
+        # return len(self.diphone2idx)
+        return len(self.phone2idx)
+
+    def _extract_features(self, timit_word):
+        """
+        Extract diphone features.
+        """
+        # return [self.diphone2idx[phone1["phone"], phone2["phone"]]
+        #         for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
+        return [self.phone2idx[phone["phone"]] for phone in timit_word["phones"]]
+
+    def __call__(self, timit_item) -> list[Tuple[int, int, int]]:
+        ret = []
+
+        for word_start, word_stop, phones in zip(timit_item["word_detail"]["start"], timit_item["word_detail"]["stop"], timit_item["word_phonetic_detail"]):
+            labels = [self.phone2idx[phone["phone"]] for phone in phones]
+            for label in labels:
+                ret.append((word_start, word_stop, label))
         
         return ret
 
@@ -135,8 +179,12 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+
         hidden_states = outputs[0]
-        hidden_states = self.merged_strategy(hidden_states, mode=self.pooling_mode)
+        
+        # TODO optional pooling
+        # hidden_states = self.merged_strategy(hidden_states, mode=self.pooling_mode)
+
         logits = self.classifier(hidden_states)
 
         loss = None
@@ -157,7 +205,7 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels)
+                loss = loss_fct(logits, labels.float())
 
         if not return_dict:
             output = (logits,) + outputs[2:]
@@ -169,6 +217,10 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+class PhoneticTargetFeatureExtractor(SequenceFeatureExtractor):
+    model_input_names: List[str] = ["phones"]
 
 
 @dataclass
@@ -198,6 +250,7 @@ class DataCollator:
     """
 
     processor: Wav2Vec2Processor
+    model: Wav2Vec2Model
     padding: Union[bool, str] = True
     max_length: Optional[int] = None
     max_length_labels: Optional[int] = None
@@ -220,22 +273,34 @@ class DataCollator:
             return_tensors="pt",
         )
 
+        # TODO this is imprecise due to padding. may be very minor changes in alignment
+        # that may matter if we care about precise word boundary effects
+        num_batch_frames = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+        compression_ratio = num_batch_frames / batch["input_values"].shape[-1]
+
         # For frame labeling
-        label_features = [torch.zeros((len(feature["input_values"]), self.num_labels), dtype=torch.long)
+        # TODO double check that padding always happens on right. otherwise this can mess up
+        # alignment between labels and model outputs
+        label_features = [torch.zeros((num_batch_frames, self.num_labels), dtype=torch.long)
                           for feature in features]
         for i, feature in enumerate(features):
             for onset, offset, label in feature["phone_targets"]:
+                onset = int(onset * compression_ratio)
+                offset = int(offset * compression_ratio)
                 label_features[i][onset:offset, label] = 1
-        label_features = [{"input_values": feature} for feature in label_features]
-        # import ipdb; ipdb.set_trace()
+        label_features = [{"phones": feature} for feature in label_features]
 
-        batch["labels"] = self.processor.pad(
+        my_padder = PhoneticTargetFeatureExtractor(
+            self.num_labels,
+            sampling_rate=self.processor.feature_extractor.sampling_rate,
+            padding_value=0,)
+        batch["labels"] = my_padder.pad(
             label_features,
             padding=self.padding,
             max_length=self.max_length,
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
-        )
+        )["phones"]
 
         # batch["labels"] = torch.tensor(label_features, dtype=torch.long)
 
