@@ -116,16 +116,16 @@ class Wav2Vec2ClassificationHead(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        # self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.final_dropout)
-        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels, bias=config.classifier_bias)
 
     def forward(self, features, **kwargs):
         x = features
         x = self.dropout(x)
-        x = self.dense(x)
-        x = torch.tanh(x)
-        x = self.dropout(x)
+        # x = self.dense(x)
+        # x = torch.tanh(x)
+        # x = self.dropout(x)
         x = self.out_proj(x)
         return x
 
@@ -205,7 +205,14 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels.float())
+                
+                if attention_mask is not None:
+                    active_loss = attention_mask.view(-1) == 1
+                    active_logits = logits.view(-1, self.num_labels)[active_loss]
+                    active_labels = labels.view(-1, self.num_labels)[active_loss]
+                    loss = loss_fct(active_logits, active_labels.float())
+                else:
+                    loss = loss_fct(logits, labels.float())
 
         if not return_dict:
             output = (logits,) + outputs[2:]
@@ -271,6 +278,7 @@ class DataCollator:
             max_length=self.max_length,
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
+            return_attention_mask=True,
         )
 
         # TODO this is imprecise due to padding. may be very minor changes in alignment
