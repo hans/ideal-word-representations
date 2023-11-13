@@ -166,6 +166,7 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
             self,
             input_values,
             attention_mask=None,
+            label_mask=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -206,10 +207,12 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 
-                if attention_mask is not None:
-                    active_loss = attention_mask.view(-1) == 1
-                    active_logits = logits.view(-1, self.num_labels)[active_loss]
-                    active_labels = labels.view(-1, self.num_labels)[active_loss]
+                if label_mask is not None:
+                    print("Label mask is present")
+                    import ipdb; ipdb.set_trace()
+                    active_loss = label_mask == 1
+                    active_logits = logits[active_loss]
+                    active_labels = labels[active_loss]
                     loss = loss_fct(active_logits, active_labels.float())
                 else:
                     loss = loss_fct(logits, labels.float())
@@ -281,16 +284,18 @@ class DataCollator:
             return_attention_mask=True,
         )
 
+        # Calculate how many frames we have per batch item
+        batch_num_samples = batch.attention_mask.sum(dim=1)
+        batch_num_frames = self.model._get_feat_extract_output_lengths(batch_num_samples)
+
         # TODO this is imprecise due to padding. may be very minor changes in alignment
         # that may matter if we care about precise word boundary effects
-        num_batch_frames = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
-        compression_ratio = num_batch_frames / batch["input_values"].shape[-1]
+        batch_max_frames = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+        compression_ratio = batch_max_frames / batch["input_values"].shape[-1]
 
         # For frame labeling
-        # TODO double check that padding always happens on right. otherwise this can mess up
-        # alignment between labels and model outputs
-        label_features = [torch.zeros((num_batch_frames, self.num_labels), dtype=torch.long)
-                          for feature in features]
+        label_features = [torch.zeros((item_num_frames, self.num_labels), dtype=torch.long)
+                          for item_num_frames in batch_num_frames]
         for i, feature in enumerate(features):
             for onset, offset, label in feature["phone_targets"]:
                 onset = int(onset * compression_ratio)
@@ -298,19 +303,19 @@ class DataCollator:
                 label_features[i][onset:offset, label] = 1
         label_features = [{"phones": feature} for feature in label_features]
 
-        # TODO mask loss on padding outputs
-
         my_padder = PhoneticTargetFeatureExtractor(
             self.num_labels,
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             padding_value=0,)
-        batch["labels"] = my_padder.pad(
+        label_pad_ret = my_padder.pad(
             label_features,
             padding=self.padding,
             max_length=self.max_length,
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
-        )["phones"]
+        )
+        batch["label_mask"] = label_pad_ret["attention_mask"]
+        batch["labels"] = label_pad_ret["phones"]
 
         # batch["labels"] = torch.tensor(label_features, dtype=torch.long)
 
