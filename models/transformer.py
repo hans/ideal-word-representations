@@ -208,8 +208,6 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
                 loss_fct = BCEWithLogitsLoss()
                 
                 if label_mask is not None:
-                    print("Label mask is present")
-                    import ipdb; ipdb.set_trace()
                     active_loss = label_mask == 1
                     active_logits = logits[active_loss]
                     active_labels = labels[active_loss]
