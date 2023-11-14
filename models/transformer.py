@@ -75,36 +75,20 @@ class TilingWordFeatureExtractor2:
     of time series spans.
     """
 
-    def __init__(self, all_phones):
-        self.all_phones = all_phones[:]
-
-        # self.all_diphones = sorted(set(
-        #     (phone1, phone2)
-        #     for phone1 in self.all_phones
-        #     for phone2 in self.all_phones
-        # ))
-
-        self.phone2idx = {phone: i for i, phone in enumerate(self.all_phones)}
-        # self.diphone2idx = {diphone: i for i, diphone in enumerate(self.all_diphones)}
+    def __init__(self, tokenizer, item_key="word_phonetic_detail"):
+        self.tokenizer = tokenizer
+        self.item_key = item_key
 
     @property
     def num_features(self):
-        # return len(self.diphone2idx)
-        return len(self.phone2idx)
-
-    # def _extract_features(self, timit_word):
-    #     """
-    #     Extract diphone features.
-    #     """
-    #     # return [self.diphone2idx[phone1["phone"], phone2["phone"]]
-    #     #         for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
-    #     return [self.phone2idx[phone["phone"]] for phone in timit_word["phones"]]
+        return self.tokenizer.vocab_size
 
     def __call__(self, timit_item) -> list[Tuple[int, int, int]]:
         ret = []
 
-        for word_start, word_stop, phones in zip(timit_item["word_detail"]["start"], timit_item["word_detail"]["stop"], timit_item["word_phonetic_detail"]):
-            labels = [self.phone2idx[phone["phone"]] for phone in phones]
+        phones = timit_item[self.item_key]
+        for word_start, word_stop, phones in zip(timit_item["word_detail"]["start"], timit_item["word_detail"]["stop"], phones):
+            labels = self.tokenizer.convert_tokens_to_ids([phone["phone"] for phone in phones])
             for label in labels:
                 ret.append((word_start, word_stop, label))
         
@@ -315,21 +299,5 @@ class DataCollator:
         )
         batch["label_mask"] = label_pad_ret["attention_mask"]
         batch["labels"] = label_pad_ret["phones"]
-
-        # batch["labels"] = torch.tensor(label_features, dtype=torch.long)
-
-        # with self.processor.as_target_processor():
-        #     labels_batch = self.processor.pad(
-        #         label_features,
-        #         padding=self.padding,
-        #         max_length=self.max_length_labels,
-        #         pad_to_multiple_of=self.pad_to_multiple_of_labels,
-        #         return_tensors="pt",
-        #     )
-
-        # # replace padding with -100 to ignore loss correctly
-        # labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
-
-        # batch["labels"] = labels
 
         return batch

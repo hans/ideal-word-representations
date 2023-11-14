@@ -62,11 +62,11 @@ test_item = {
     'id': 'SI681'
 }
 
-def group_phonetic_detail(item, drop_phones=None):
+def group_phonetic_detail(item, drop_phones=None, key="phonetic_detail"):
     """
     Group phonetic_detail entries according to the containing word.
     """
-    phonetic_detail = item["phonetic_detail"]
+    phonetic_detail = item[key]
     word_detail = item["word_detail"]
 
     word_phonetic_detail = []
@@ -78,7 +78,7 @@ def group_phonetic_detail(item, drop_phones=None):
             if phon_start >= start and phon_stop <= stop:
                 word_phonetic_detail[-1].append({"phone": phon, "start": phon_start, "stop": phon_stop})
 
-    item["word_phonetic_detail"] = word_phonetic_detail
+    item[f"word_{key}"] = word_phonetic_detail
     return item
 
 

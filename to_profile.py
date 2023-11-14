@@ -1,3 +1,8 @@
+# This file is out-of-date with respect to the new corpus as of
+# 20231114. Should be updated to use a static `Tokenizer` rather
+# than the dynamic phone vocabulary.
+
+
 from pathlib import Path
 
 import datasets
@@ -47,7 +52,7 @@ def prepare_corpus():
     return corpus, phone_vocab
 
 
-def load_corpus(corpus_path="timit_corpus"):
+def load_corpus(corpus_path="timit_phoneme_corpus"):
     if not Path(corpus_path).exists():
         corpus, phone_vocab = prepare_corpus()
         corpus.save_to_disk(corpus_path)
