@@ -17,7 +17,7 @@ class RecurrentClassifierOutput(ModelOutput):
     logits: torch.FloatTensor = None
     wav2vec2_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     wav2vec2_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    rnn_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    rnn_hidden_states: Optional[torch.FloatTensor] = None
 
 
 class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
@@ -74,7 +74,7 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
         hidden_states = self.dropout(hidden_states)
 
         # RNN
-        rnn_out, rnn_hidden = self.rnn(hidden_states)
+        rnn_out, _ = self.rnn(hidden_states)
 
         logits = self.classifier(self.dropout(rnn_out))
 
@@ -99,5 +99,5 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
             logits=logits,
             wav2vec2_hidden_states=outputs.hidden_states,
             wav2vec2_attentions=outputs.attentions,
-            rnn_hidden_states=rnn_hidden,
+            rnn_hidden_states=rnn_out,
         )
