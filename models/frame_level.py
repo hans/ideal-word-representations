@@ -37,7 +37,7 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
         self.rnn = nn.LSTM(
             input_size=config.hidden_size,
             hidden_size=config.rnn_hidden_size,
-            num_layers=1,
+            num_layers=getattr(config, "rnn_num_layers", 1),
             bidirectional=False,
             batch_first=True,
         )
