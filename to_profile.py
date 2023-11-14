@@ -76,16 +76,14 @@ def make_model_init(model_name_or_path, config, device="cpu"):
 
 def compute_metrics(p: transformers.EvalPrediction):
     preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-    preds = preds.reshape((-1, preds.shape[-1]))
-    labels = p.label_ids.reshape((-1, preds.shape[-1]))
+    label_mask, labels = p.label_ids
 
     def evaluate_label(j):
-        preds_j = preds[:, j]
-        labels_j = labels[:, j]
+        preds_j = preds[:, :, j]
+        labels_j = labels[:, :, j]
 
-        mask = labels_j != -100
-        preds_j = preds_j[mask]
-        labels_j = labels_j[mask]
+        preds_j = preds_j[label_mask == 1]
+        labels_j = labels_j[label_mask == 1]
         if labels_j.std() == 0:
             # Only one class. Quit
             return None
