@@ -67,7 +67,7 @@ def make_model_init(model_name_or_path, config, device="cpu"):
         # model.wav2vec2 = drop_wav2vec_layers(model.wav2vec2, 10)
 
         # Freeze all model weights.
-        for param in model.parameters():
+        for param in model.wav2vec2.parameters():
             param.requires_grad = False
         
         return model
