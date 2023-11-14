@@ -107,26 +107,28 @@ def main():
         num_labels=len(phone_vocab))
     setattr(config, "pooling_mode", "mean")
     setattr(config, "classifier_bias", False)
+    setattr(config, "output_vocab", phone_vocab.index2token)
     model_init = make_model_init(model_name_or_path, config, device=device)
 
     coll = DataCollator(processor=processor, model=model_init(None), padding=True,
                         num_labels=len(phone_vocab.index2token))
 
     training_args = TrainingArguments(
-        output_dir="out/cli_test",
-        group_by_length=True,
-        per_device_train_batch_size=16,
+        output_dir="out/pure_hugging/testrun4",
+        # group_by_length=True,
+        per_device_train_batch_size=32,
         evaluation_strategy="steps",
-        num_train_epochs=2,
+        num_train_epochs=50,
         gradient_accumulation_steps=2,
-        save_steps=25,
-        eval_steps=25,
+        save_steps=50,
+        eval_steps=50,
         logging_steps=2,
-        learning_rate=1e-4,
+        learning_rate=1e-2,
         save_total_limit=5,
         use_cpu=False,
         remove_unused_columns=False,
         load_best_model_at_end=True,
+        label_names=["label_mask", "labels"],
         # disable_tqdm=True,
     )
 
@@ -136,14 +138,17 @@ def main():
         args=training_args,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
         compute_metrics=compute_metrics,
-        train_dataset=corpus["train"].select(range(100)),
+        train_dataset=corpus["train"],
         eval_dataset=corpus["test"],
         tokenizer=processor.feature_extractor,
     )
 
-    # # Manual
-    model = model_init(None)
-    batch = next(iter(trainer.get_train_dataloader()))
-    model(**batch)
+    # ## Manual
+    # batch = next(iter(trainer.get_train_dataloader()))
+    # model = model_init(None)
+    # model_out = model(**batch)
+    # import ipdb; ipdb.set_trace()
+
+    trainer.train()
 
 main()
