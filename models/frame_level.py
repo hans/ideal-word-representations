@@ -20,6 +20,18 @@ class RecurrentClassifierOutput(ModelOutput):
     rnn_hidden_states: Optional[torch.FloatTensor] = None
 
 
+class DummyIdentityRNN(nn.Module):
+    """
+    Dummy module which acts as identity, but returns RNN-like output.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    def forward(self, x):
+        return x, None
+
+
 class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
     """
     Frame-level RNN classifier for multi-label classification.
@@ -34,7 +46,9 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
         self.wav2vec2 = Wav2Vec2Model(config)
 
         # RNN
-        self.rnn = nn.LSTM(
+        num_layers = getattr(config, "rnn_num_layers", 1)
+        rnn_module = nn.LSTM if num_layers > 0 else DummyIdentityRNN
+        self.rnn = rnn_module(
             input_size=config.hidden_size,
             hidden_size=config.rnn_hidden_size,
             num_layers=getattr(config, "rnn_num_layers", 1),
