@@ -64,7 +64,9 @@ def make_model_init(model_name_or_path, config, device="cpu"):
             model_name_or_path, config=config).to(device)
 
         model.freeze_feature_extractor()
-        # model.wav2vec2 = drop_wav2vec_layers(model.wav2vec2, 10)
+
+        if hasattr(config, "drop_layers"):
+            model.wav2vec2 = drop_wav2vec_layers(model.wav2vec2, config.drop_layers)
 
         # Freeze all model weights.
         for param in model.wav2vec2.parameters():
@@ -97,6 +99,8 @@ def main():
     model_name_or_path = "facebook/wav2vec2-base-960h"
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    drop_layers = 6
+
     processor = transformers.Wav2Vec2Processor.from_pretrained(model_name_or_path)
     corpus, phone_vocab = load_corpus()
 
@@ -108,13 +112,14 @@ def main():
     setattr(config, "pooling_mode", "mean")
     setattr(config, "classifier_bias", False)
     setattr(config, "output_vocab", phone_vocab.index2token)
+    setattr(config, "drop_layers", drop_layers)
     model_init = make_model_init(model_name_or_path, config, device=device)
 
     coll = DataCollator(processor=processor, model=model_init(None), padding=True,
                         num_labels=len(phone_vocab.index2token))
 
     training_args = TrainingArguments(
-        output_dir="out/pure_hugging/testrun4",
+        output_dir=f"out/pure_hugging/run5_drop{drop_layers}layers",
         # group_by_length=True,
         per_device_train_batch_size=32,
         evaluation_strategy="steps",
