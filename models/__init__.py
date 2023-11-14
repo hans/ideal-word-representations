@@ -14,6 +14,15 @@ class Vocabulary(object):
         self.sos_token_id = self.token2index[SOS_TOKEN]
         self.eos_token_id = self.token2index[EOS_TOKEN]
 
+    @classmethod
+    def from_index2token(self, index2token):
+        vocab = Vocabulary("unknown")
+        vocab.index2token = index2token
+        vocab.token2index = {token: idx for idx, token in enumerate(vocab.index2token)}
+        vocab.sos_token_id = vocab.token2index[SOS_TOKEN]
+        vocab.eos_token_id = vocab.token2index[EOS_TOKEN]
+        return vocab
+
     def add_token(self, token: str):
         if token not in self.token2index:
             self.token2index[token] = len(self.index2token)
@@ -28,3 +37,11 @@ class Vocabulary(object):
 
     def __len__(self):
         return len(self.index2token)
+
+    def toJSON(self):
+        return {
+            "name": self.name,
+            "index2token": self.index2token,
+            "sos_token_id": self.sos_token_id,
+            "eos_token_id": self.eos_token_id,
+        }

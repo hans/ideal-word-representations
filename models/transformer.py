@@ -76,29 +76,29 @@ class TilingWordFeatureExtractor2:
     """
 
     def __init__(self, all_phones):
-        self.all_phones = sorted(all_phones)
+        self.all_phones = all_phones[:]
 
-        self.all_diphones = sorted(set(
-            (phone1, phone2)
-            for phone1 in self.all_phones
-            for phone2 in self.all_phones
-        ))
+        # self.all_diphones = sorted(set(
+        #     (phone1, phone2)
+        #     for phone1 in self.all_phones
+        #     for phone2 in self.all_phones
+        # ))
 
         self.phone2idx = {phone: i for i, phone in enumerate(self.all_phones)}
-        self.diphone2idx = {diphone: i for i, diphone in enumerate(self.all_diphones)}
+        # self.diphone2idx = {diphone: i for i, diphone in enumerate(self.all_diphones)}
 
     @property
     def num_features(self):
         # return len(self.diphone2idx)
         return len(self.phone2idx)
 
-    def _extract_features(self, timit_word):
-        """
-        Extract diphone features.
-        """
-        # return [self.diphone2idx[phone1["phone"], phone2["phone"]]
-        #         for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
-        return [self.phone2idx[phone["phone"]] for phone in timit_word["phones"]]
+    # def _extract_features(self, timit_word):
+    #     """
+    #     Extract diphone features.
+    #     """
+    #     # return [self.diphone2idx[phone1["phone"], phone2["phone"]]
+    #     #         for phone1, phone2 in zip(timit_word["phones"], timit_word["phones"][1:])]
+    #     return [self.phone2idx[phone["phone"]] for phone in timit_word["phones"]]
 
     def __call__(self, timit_item) -> list[Tuple[int, int, int]]:
         ret = []
@@ -139,6 +139,7 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
 
         self.wav2vec2 = Wav2Vec2Model(config)
         self.classifier = Wav2Vec2ClassificationHead(config)
+        self.output_vocab = getattr(config, "output_vocab")
 
         self.init_weights()
 
