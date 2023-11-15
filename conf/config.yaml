@@ -1,5 +1,50 @@
+defaults:
+  - _self_
+  - dataset: timit_phonemes
+  - collator: multilabel_phoneme
 
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+
+hydra.job.chdir: false
+
+device: cuda
+
+model:
+  base_model: charsiu/en_w2v2_ctc_libris_and_cv
+  reinit_weights: false
+  drop_layers: 6
+
+  rnn_num_layers: 2
+  rnn_hidden_size: 128
+  classifier_bias: true
+
+tokenizer:
+  _target_: transformers.Wav2Vec2CTCTokenizer.from_pretrained
+  pretrained_model_name_or_path: charsiu/tokenizer_en_cmu
+
+feature_extractor:
+  _target_: transformers.Wav2Vec2FeatureExtractor
+  feature_size: 1
+  sampling_rate: 16000
+
+training_args:
+  output_dir: debug_output
+  per_device_train_batch_size: 16
+  evaluation_strategy: steps
+  num_train_epochs: 50
+  gradient_accumulation_steps: 2
+  save_steps: 50
+  eval_steps: 50
+  logging_steps: 2
+  learning_rate: 1e-2
+  save_total_limit: 5
+  remove_unused_columns: false
+  load_best_model_at_end: true
+  label_names: ["label_mask", "labels"]
+  disable_tqdm: true
 
 trainer:
-  batch_size: 32
-  checkpoint_path: autoencoder.pt
+  callbacks:
+    - _target_: transformers.EarlyStoppingCallback
+      early_stopping_patience: 3

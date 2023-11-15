@@ -2,10 +2,13 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Union, List, Optional, Tuple
 
+import numpy as np
+from sklearn.metrics import roc_auc_score, roc_curve
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
+import transformers
 from transformers.file_utils import ModelOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2Model, Wav2Vec2PreTrainedModel
 from transformers.models.wav2vec2.processing_wav2vec2 import Wav2Vec2Processor
@@ -301,3 +304,26 @@ class DataCollator:
         batch["labels"] = label_pad_ret["phones"]
 
         return batch
+    
+
+def compute_metrics(p: transformers.EvalPrediction):
+    """
+    Compute frame-level multilabel classification ROC-AUC, averaged across labels.
+    """
+
+    preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+    label_mask, labels = p.label_ids
+
+    def evaluate_label(j):
+        preds_j = preds[:, :, j]
+        labels_j = labels[:, :, j]
+
+        preds_j = preds_j[label_mask == 1]
+        labels_j = labels_j[label_mask == 1]
+        if labels_j.std() == 0:
+            # Only one class. Quit
+            return None
+        return roc_auc_score(labels_j, preds_j)
+
+    roc_auc_scores = [evaluate_label(j) for j in range(preds.shape[-1])]
+    return {"roc_auc": np.mean([score for score in roc_auc_scores if score is not None])}

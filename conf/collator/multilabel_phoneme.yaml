@@ -1,0 +1,3 @@
+_target_: src.models.transformer.DataCollator
+
+padding: true

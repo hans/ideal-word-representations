@@ -15,12 +15,12 @@ class Vocabulary(object):
         self.eos_token_id = self.token2index[EOS_TOKEN]
 
     @classmethod
-    def from_index2token(self, index2token):
+    def from_index2token(self, index2token, sos_token=SOS_TOKEN, eos_token=EOS_TOKEN):
         vocab = Vocabulary("unknown")
         vocab.index2token = index2token
         vocab.token2index = {token: idx for idx, token in enumerate(vocab.index2token)}
-        vocab.sos_token_id = vocab.token2index[SOS_TOKEN]
-        vocab.eos_token_id = vocab.token2index[EOS_TOKEN]
+        vocab.sos_token_id = vocab.token2index[sos_token]
+        vocab.eos_token_id = vocab.token2index[eos_token]
         return vocab
 
     def add_token(self, token: str):
