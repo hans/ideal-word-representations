@@ -48,6 +48,10 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
         # RNN
         num_layers = getattr(config, "rnn_num_layers", 1)
         rnn_module = nn.LSTM if num_layers > 0 else DummyIdentityRNN
+        if num_layers == 0:
+            # TODO log?
+            setattr(config, "rnn_hidden_size", config.hidden_size)
+
         self.rnn = rnn_module(
             input_size=config.hidden_size,
             hidden_size=config.rnn_hidden_size,
