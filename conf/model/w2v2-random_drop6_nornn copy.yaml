@@ -1,5 +1,6 @@
 base_model: facebook/wav2vec2-base
-reinit_weights: true
+reinit_feature_extractor_weights: true
+reinit_encoder_weights: true
 drop_layers: 6
 
 rnn_num_layers: 0

@@ -23,8 +23,10 @@ def make_model_init(model_name_or_path, config, device="cpu"):
         if hasattr(config, "drop_layers"):
             model.wav2vec2 = drop_wav2vec_layers(model.wav2vec2, config.drop_layers)
 
-        if getattr(config, "reinit_weights", False):
-            model.wav2vec2.init_weights()
+        if getattr(config, "reinit_feature_extractor_weights", False):
+            model.wav2vec2.feature_extractor.apply(lambda x: model.wav2vec2._init_weights(x))
+        if getattr(config, "reinit_encoder_weights", False):
+            model.wav2vec2.encoder.apply(lambda x: model.wav2vec2._init_weights(x))
 
         # Freeze all model weights.
         for param in model.wav2vec2.parameters():
