@@ -2,22 +2,18 @@ defaults:
   - _self_
   - dataset: timit_phonemes
   - collator: multilabel_phoneme
+  - model: w2v2_drop6_nornn
 
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
-hydra.job.chdir: false
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/models/${hydra:job.name}
 
 device: cuda
-
-model:
-  base_model: charsiu/en_w2v2_ctc_libris_and_cv
-  reinit_weights: false
-  drop_layers: 6
-
-  rnn_num_layers: 2
-  rnn_hidden_size: 128
-  classifier_bias: true
 
 tokenizer:
   _target_: transformers.Wav2Vec2CTCTokenizer.from_pretrained
@@ -29,7 +25,6 @@ feature_extractor:
   sampling_rate: 16000
 
 training_args:
-  output_dir: debug_output
   per_device_train_batch_size: 16
   evaluation_strategy: steps
   num_train_epochs: 50

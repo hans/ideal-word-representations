@@ -7,7 +7,7 @@ import pandas as pd
 import soundfile as sf
 import torch
 
-from models.transformer import TilingWordFeatureExtractor2
+from src.models.transformer import TilingWordFeatureExtractor2
 
 
 import numpy as np

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from datasets import Dataset
 from omegaconf import DictConfig, OmegaConf
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
 from sklearn.metrics import roc_curve
@@ -21,6 +22,9 @@ def make_model_init(model_name_or_path, config, device="cpu"):
 
         if hasattr(config, "drop_layers"):
             model.wav2vec2 = drop_wav2vec_layers(model.wav2vec2, config.drop_layers)
+
+        if getattr(config, "reinit_weights", False):
+            model.wav2vec2.init_weights()
 
         # Freeze all model weights.
         for param in model.wav2vec2.parameters():
@@ -134,7 +138,9 @@ def train(config: DictConfig):
     # Don't directly use `instantiate` with `TrainingArguments` or `Trainer` because the
     # type validation stuff is craaaaazy.
     # We also have to use `to_object` to make sure the params are JSON-serializable
-    training_args = transformers.TrainingArguments(**OmegaConf.to_object(config.training_args))
+    training_args = transformers.TrainingArguments(
+        output_dir=HydraConfig.get().runtime.output_dir,
+        **OmegaConf.to_object(config.training_args))
 
     callbacks = []
     if "callbacks" in config.trainer:

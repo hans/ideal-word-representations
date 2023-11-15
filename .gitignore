@@ -6,4 +6,5 @@ __pycache__
 .ipynb_checkpoints
 *.h5
 out
-timit_corpus
+outputs
+.snakemake

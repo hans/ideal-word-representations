@@ -1,0 +1,8 @@
+base_model: facebook/wav2vec2-base
+reinit_weights: false
+drop_layers: 6
+
+rnn_num_layers: 0
+rnn_hidden_size: 768
+
+classifier_bias: true
