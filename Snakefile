@@ -52,12 +52,13 @@ rule run_notebook:
         notebook = "notebooks/{notebook}.ipynb",
         model_result = "outputs/models/{model_name}/test_result"
     output:
-        "outputs/notebooks/{model_name}/{notebook}.ipynb"
+        outdir = directory("outputs/notebooks/{model_name}/{notebook}"),
+        notebook = "outputs/notebooks/{model_name}/{notebook}/{notebook}.ipynb"
 
     shell:
         """
         papermill --log-output \
-            {input.notebook} {output} \
+            {input.notebook} {output.notebook} \
             -p model_name {wildcards.model_name} \
             -p test_dataset_path {input.model_result}
         """
