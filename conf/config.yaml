@@ -36,7 +36,7 @@ training_args:
   save_total_limit: 5
   remove_unused_columns: false
   load_best_model_at_end: true
-  label_names: ["label_mask", "labels"]
+  label_names: ["target_mask", "classifier_labels", "regressor_targets"]
   disable_tqdm: true
 
 trainer:

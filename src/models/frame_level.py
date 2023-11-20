@@ -219,6 +219,11 @@ class LexicalAccessDataCollator:
         batch_num_samples = batch.attention_mask.sum(dim=1)
         batch_num_frames = self.model.encoder._get_feat_extract_output_lengths(batch_num_samples).tolist()
 
+        # TODO this is imprecise due to padding. may be very minor changes in alignment
+        # that may matter if we care about precise word boundary effects
+        batch_max_frames = self.model.encoder._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+        compression_ratio = batch_max_frames / batch["input_values"].shape[-1]
+
         targets = [torch.zeros((item_num_frames, self.regression_target_size),
                                dtype=torch.float)
                    for item_num_frames in batch_num_frames]
@@ -226,6 +231,9 @@ class LexicalAccessDataCollator:
             for onset, offset, word in zip(feature["word_detail"]["start"], feature["word_detail"]["stop"],
                                             feature["word_detail"]["utterance"]):
                 word_id = self.model.word_to_idx[word]
+                onset = int(onset * compression_ratio)
+                offset = int(offset * compression_ratio)
+
                 targets[i][onset:offset, :] = self.model.word_representations[word_id]
 
         feature_extractor = SemanticTargetFeatureExtractor(
@@ -260,11 +268,11 @@ class LexicalAccessDataCollator:
         )
 
         label_features = self._collate_frame_labels(features, batch)        
-        batch["label_mask"] = label_features["attention_mask"]
-        batch["labels"] = label_features["phones"]
+        batch["target_mask"] = label_features["attention_mask"]
+        batch["classifier_labels"] = label_features["phones"]
 
         regression_features = self._collate_frame_regression_targets(features, batch)
-        batch["regression_targets"] = regression_features["targets"]
+        batch["regressor_targets"] = regression_features["targets"]
 
         return batch
 
@@ -365,11 +373,11 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             self,
             input_values,
             attention_mask=None,
-            label_mask=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
             
+            target_mask=None,
             classifier_labels=None,
             regressor_targets=None,
             loss_alpha=0.5,
@@ -396,22 +404,24 @@ class FrameLevelLexicalAccess(PreTrainedModel):
         # Classification loss
         loss = torch.tensor(0.).to(logits)
         loss_alpha = torch.tensor(loss_alpha).to(logits)
+        loss_mask = target_mask == 1 if target_mask is not None else None
         if classifier_labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
-                
-            if label_mask is not None:
-                active_loss = label_mask == 1
-                active_logits = logits[active_loss]
-                active_labels = classifier_labels[active_loss]
-                loss += loss_alpha * loss_fct(active_logits, active_labels.float())
-            else:
-                loss += loss_alpha * loss_fct(logits, classifier_labels.float())
+            
+            active_logits = logits[loss_mask] if loss_mask is not None else logits
+            active_labels = classifier_labels[loss_mask] if loss_mask is not None else classifier_labels
+            loss += loss_alpha * loss_fct(active_logits, active_labels.float())
 
         # Regression loss
         if regressor_targets is not None:
             if self.config.regressor_loss == "mse":
                 loss_fct = nn.MSELoss()
-                loss += (1 - loss_alpha) * loss_fct(semantic, regressor_targets)
+            else:
+                raise ValueError(f"Regressor loss {self.config.regressor_loss} not supported.")
+
+            active_semantic = semantic[loss_mask] if loss_mask is not None else semantic
+            active_targets = regressor_targets[loss_mask] if loss_mask is not None else regressor_targets
+            loss += (1 - loss_alpha) * loss_fct(semantic, regressor_targets)
 
         if not return_dict:
             output = (logits, semantic) + outputs[2:]
