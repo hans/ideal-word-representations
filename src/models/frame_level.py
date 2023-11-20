@@ -234,7 +234,7 @@ class LexicalAccessDataCollator:
                    for item_num_frames in batch_num_frames]
         for i, feature in enumerate(features):
             for onset, offset, word in zip(feature["word_detail"]["start"], feature["word_detail"]["stop"],
-                                            feature["word_detail"]["utterance"]):
+                                           feature["word_detail"]["utterance"]):
                 word_id = self.model.word_to_idx[word]
                 onset = int(onset * compression_ratio)
                 offset = int(offset * compression_ratio)
@@ -289,7 +289,11 @@ class LexicalAccessConfig(PretrainedConfig):
 
     def __init__(
             self,
+
             encoder_config: Optional[dict] = None,
+            drop_encoder_layers: Optional[int] = None,
+            reinit_feature_extractor_weights: bool = False,
+            reinit_encoder_weights: bool = False,
 
             dropout: float = 0.1,
 
@@ -309,6 +313,9 @@ class LexicalAccessConfig(PretrainedConfig):
             encoder_config = {}
             L.info("No encoder config provided, using default encoder config.")
         self.encoder_config = Wav2Vec2Config(**encoder_config)
+        self.drop_encoder_layers = drop_encoder_layers
+        self.reinit_feature_extractor_weights = reinit_feature_extractor_weights
+        self.reinit_encoder_weights = reinit_encoder_weights
 
         self.dropout = dropout
 
@@ -322,7 +329,7 @@ class LexicalAccessConfig(PretrainedConfig):
         self.regressor_target_size = regressor_target_size
         self.regressor_loss = regressor_loss
 
-        if self.regressor_loss not in ["mse"]:
+        if self.regressor_loss not in [None, "mse"]:
             raise ValueError(f"Regressor loss {self.regressor_loss} not supported.")
 
 
@@ -422,7 +429,7 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             loss += loss_alpha * loss_fct(active_logits, active_labels.float())
 
         # Regression loss
-        if regressor_targets is not None:
+        if regressor_targets is not None and self.config.regressor_loss is not None:
             if self.config.regressor_loss == "mse":
                 loss_fct = nn.MSELoss()
             else:
