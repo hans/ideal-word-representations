@@ -3,15 +3,20 @@ Defines SLM frame-level classifier and regression models.
 """
 
 from dataclasses import dataclass
+import logging
 from typing import Optional, Tuple, Union, List, Dict
 
 import torch
 import torch.nn as nn
 from transformers.file_utils import ModelOutput
 from transformers import Wav2Vec2Model, Wav2Vec2ForCTC, Wav2Vec2Processor, \
-    PretrainedConfig, BatchFeature, PreTrainedModel, SequenceFeatureExtractor
+    Wav2Vec2Config, PretrainedConfig, \
+    BatchFeature, PreTrainedModel, SequenceFeatureExtractor
 
 from src.models.transformer import PhoneticTargetFeatureExtractor
+
+
+L = logging.getLogger(__name__)
 
 
 @dataclass
@@ -280,10 +285,11 @@ class LexicalAccessDataCollator:
 class LexicalAccessConfig(PretrainedConfig):
 
     model_type = "lexical_access"
+    is_composition = True
 
     def __init__(
             self,
-            encoder_config: PretrainedConfig,
+            encoder_config: Optional[dict] = None,
 
             dropout: float = 0.1,
 
@@ -299,7 +305,10 @@ class LexicalAccessConfig(PretrainedConfig):
             **kwargs):
         super().__init__(**kwargs)
 
-        self.encoder_config = encoder_config
+        if encoder_config is None:
+            encoder_config = {}
+            L.info("No encoder config provided, using default encoder config.")
+        self.encoder_config = Wav2Vec2Config(**encoder_config)
 
         self.dropout = dropout
 
