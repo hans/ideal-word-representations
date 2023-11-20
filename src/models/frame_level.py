@@ -3,18 +3,32 @@ Defines SLM frame-level classifier and regression models.
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, List, Dict
 
 import torch
 import torch.nn as nn
 from transformers.file_utils import ModelOutput
-from transformers import Wav2Vec2Model, Wav2Vec2ForCTC
+from transformers import Wav2Vec2Model, Wav2Vec2ForCTC, Wav2Vec2Processor, \
+    PretrainedConfig, BatchFeature, PreTrainedModel, SequenceFeatureExtractor
+
+from src.models.transformer import PhoneticTargetFeatureExtractor
 
 
 @dataclass
 class RecurrentClassifierOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: torch.FloatTensor = None
+    wav2vec2_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    wav2vec2_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    rnn_hidden_states: Optional[torch.FloatTensor] = None
+
+
+@dataclass
+class LexicalAccessOutput(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    semantic: torch.FloatTensor = None
+
     wav2vec2_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     wav2vec2_attentions: Optional[Tuple[torch.FloatTensor]] = None
     rnn_hidden_states: Optional[torch.FloatTensor] = None
@@ -117,5 +131,299 @@ class FrameLevelRNNClassifier(Wav2Vec2ForCTC):
             logits=logits,
             wav2vec2_hidden_states=outputs.hidden_states,
             wav2vec2_attentions=outputs.attentions,
+            rnn_hidden_states=rnn_out,
+        )
+
+
+class SemanticTargetFeatureExtractor(SequenceFeatureExtractor):
+    model_input_names: List[str] = ["targets"]
+
+
+@dataclass
+class LexicalAccessDataCollator:
+    """
+    Data collator for the lexical access model, with dual-head predictions
+    where padding is the same for the two heads.
+
+    Args:
+        processor (:class:`~transformers.Wav2Vec2Processor`)
+            The processor used for proccessing the data.
+        padding (:obj:`bool`, :obj:`str` or :class:`~transformers.tokenization_utils_base.PaddingStrategy`, `optional`, defaults to :obj:`True`):
+            Select a strategy to pad the returned sequences (according to the model's padding side and padding index)
+            among:
+            * :obj:`True` or :obj:`'longest'`: Pad to the longest sequence in the batch (or no padding if only a single
+              sequence if provided).
+            * :obj:`'max_length'`: Pad to a maximum length specified with the argument :obj:`max_length` or to the
+              maximum acceptable input length for the model if that argument is not provided.
+            * :obj:`False` or :obj:`'do_not_pad'` (default): No padding (i.e., can output a batch with sequences of
+              different lengths).
+        max_length (:obj:`int`, `optional`):
+            Maximum length of the ``input_values`` of the returned list and optionally padding length (see above).
+        max_length_labels (:obj:`int`, `optional`):
+            Maximum length of the ``labels`` returned list and optionally padding length (see above).
+        pad_to_multiple_of (:obj:`int`, `optional`):
+            If set will pad the sequence to a multiple of the provided value.
+            This is especially useful to enable the use of Tensor Cores on NVIDIA hardware with compute capability >=
+            7.5 (Volta).
+    """
+
+    processor: Wav2Vec2Processor
+    model: "FrameLevelLexicalAccess"
+    padding: Union[bool, str] = True
+    max_length: Optional[int] = None
+    max_length_labels: Optional[int] = None
+    num_labels: int = 2
+    regression_target_size: int = 32
+    pad_to_multiple_of: Optional[int] = None
+    pad_to_multiple_of_labels: Optional[int] = None
+
+    def _collate_frame_labels(
+            self,
+            features: List[Dict[str, Union[List[int], torch.Tensor]]],
+            batch: BatchFeature) -> BatchFeature:
+        # Calculate how many frames we have per batch item
+        batch_num_samples = batch.attention_mask.sum(dim=1)
+        batch_num_frames = self.model.encoder._get_feat_extract_output_lengths(batch_num_samples).tolist()
+
+        # TODO this is imprecise due to padding. may be very minor changes in alignment
+        # that may matter if we care about precise word boundary effects
+        batch_max_frames = self.model.encoder._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+        compression_ratio = batch_max_frames / batch["input_values"].shape[-1]
+
+        label_features = [torch.zeros((item_num_frames, self.num_labels), dtype=torch.long)
+                          for item_num_frames in batch_num_frames]
+        for i, feature in enumerate(features):
+            for onset, offset, label in feature["phone_targets"]:
+                onset = int(onset * compression_ratio)
+                offset = int(offset * compression_ratio)
+                label_features[i][onset:offset, label] = 1
+        label_features = [{"phones": feature} for feature in label_features]
+
+        my_padder = PhoneticTargetFeatureExtractor(
+            self.num_labels,
+            sampling_rate=self.processor.feature_extractor.sampling_rate,
+            padding_value=0,)
+
+        return my_padder.pad(
+            label_features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+        )
+
+    def _collate_frame_regression_targets(
+            self, features: List[Dict[str, Union[List[int], torch.Tensor]]],
+            batch: BatchFeature) -> BatchFeature:
+        # Calculate how many frames we have per batch item
+        batch_num_samples = batch.attention_mask.sum(dim=1)
+        batch_num_frames = self.model.encoder._get_feat_extract_output_lengths(batch_num_samples).tolist()
+
+        targets = [torch.zeros((item_num_frames, self.regression_target_size),
+                               dtype=torch.float)
+                   for item_num_frames in batch_num_frames]
+        for i, feature in enumerate(features):
+            for onset, offset, word in zip(feature["word_detail"]["start"], feature["word_detail"]["stop"],
+                                            feature["word_detail"]["utterance"]):
+                word_id = self.model.word_to_idx[word]
+                targets[i][onset:offset, :] = self.model.word_representations[word_id]
+
+        feature_extractor = SemanticTargetFeatureExtractor(
+            feature_size=self.regression_target_size,
+            sampling_rate=self.processor.feature_extractor.sampling_rate,
+            padding_value=0,)
+        result = feature_extractor.pad(
+            [{"targets": targets_i} for targets_i in targets],
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+        )
+
+        return result
+        
+
+    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
+        # split inputs and labels since they have to be of different lengths and need
+        # different padding methods
+        input_features = [{"input_values": feature["input_values"]} for feature in features]
+        # For classification
+        # label_features = [feature["labels"] for feature in features]
+
+        batch = self.processor.pad(
+            input_features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+            return_attention_mask=True,
+        )
+
+        label_features = self._collate_frame_labels(features, batch)        
+        batch["label_mask"] = label_features["attention_mask"]
+        batch["labels"] = label_features["phones"]
+
+        regression_features = self._collate_frame_regression_targets(features, batch)
+        batch["regression_targets"] = regression_features["targets"]
+
+        return batch
+
+
+class LexicalAccessConfig(PretrainedConfig):
+
+    model_type = "lexical_access"
+
+    def __init__(
+            self,
+            encoder_config: PretrainedConfig,
+
+            dropout: float = 0.1,
+
+            rnn_num_layers: int = 2,
+            rnn_hidden_size: int = 128,
+            expose_rnn: bool = False,
+
+            classifier_num_labels: int = 32,
+            classifier_bias: bool = True,
+
+            regressor_target_size: int = 32,
+            regressor_loss: str = "mse",
+            **kwargs):
+        super().__init__(**kwargs)
+
+        self.encoder_config = encoder_config
+
+        self.dropout = dropout
+
+        self.rnn_num_layers = rnn_num_layers
+        self.rnn_hidden_size = rnn_hidden_size
+        self.expose_rnn = expose_rnn
+
+        self.classifier_num_labels = classifier_num_labels
+        self.classifier_bias = classifier_bias
+
+        self.regressor_target_size = regressor_target_size
+        self.regressor_loss = regressor_loss
+
+        if self.regressor_loss not in ["mse"]:
+            raise ValueError(f"Regressor loss {self.regressor_loss} not supported.")
+
+
+class FrameLevelLexicalAccess(PreTrainedModel):
+    """
+    Dual-head frame level model, outputting
+    1) multi-label classifier outputs
+    2) semantic representation
+    """
+    config_class = LexicalAccessConfig
+
+    def __init__(self,
+                 config: LexicalAccessConfig,
+                 word_vocabulary: List[str],
+                 word_representations: torch.FloatTensor,
+                 encoder: Optional[Wav2Vec2Model] = None):
+        super().__init__(config)
+        self.config = config
+
+        self.word_vocabulary = word_vocabulary
+        self.word_representations = word_representations
+        assert len(word_vocabulary) == word_representations.shape[0]
+        self.word_to_idx = {word: idx for idx, word in enumerate(word_vocabulary)}
+
+        if encoder is None:
+            self.encoder = Wav2Vec2Model(config.encoder_config)
+        else:
+            self.encoder = encoder
+
+        # RNN
+        # TODO expose LSTM states
+        rnn_module = nn.LSTM if config.rnn_num_layers > 0 else DummyIdentityRNN
+        self.rnn = rnn_module(
+            input_size=config.encoder_config.hidden_size,
+            hidden_size=config.rnn_hidden_size,
+            num_layers=config.rnn_num_layers,
+            bidirectional=False,
+            batch_first=True,
+        )
+
+        self.encoder_dropout = nn.Dropout(config.dropout)
+
+        # Classification head
+        self.classifier_dropout = nn.Dropout(config.dropout)
+        self.classifier = nn.Linear(config.rnn_hidden_size, config.num_labels, bias=config.classifier_bias)
+
+        # Regression head
+        self.regressor_dropout = nn.Dropout(config.dropout)
+        self.regressor = nn.Linear(config.rnn_hidden_size, config.regressor_target_size)
+
+        self.init_weights()
+
+    def freeze_feature_extractor(self):
+        self.encoder.feature_extractor._freeze_parameters()
+
+    def forward(
+            self,
+            input_values,
+            attention_mask=None,
+            label_mask=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            
+            classifier_labels=None,
+            regressor_targets=None,
+            loss_alpha=0.5,
+    ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        outputs = self.encoder(
+            input_values,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        hidden_states = outputs[0]
+        hidden_states = self.encoder_dropout(hidden_states)
+
+        # RNN
+        rnn_out, _ = self.rnn(hidden_states)
+
+        # Outputs
+        logits = self.classifier(self.classifier_dropout(rnn_out))
+        semantic = self.regressor(self.regressor_dropout(rnn_out))
+
+        # Classification loss
+        loss = torch.tensor(0.).to(logits)
+        loss_alpha = torch.tensor(loss_alpha).to(logits)
+        if classifier_labels is not None:
+            loss_fct = nn.BCEWithLogitsLoss()
+                
+            if label_mask is not None:
+                active_loss = label_mask == 1
+                active_logits = logits[active_loss]
+                active_labels = classifier_labels[active_loss]
+                loss += loss_alpha * loss_fct(active_logits, active_labels.float())
+            else:
+                loss += loss_alpha * loss_fct(logits, classifier_labels.float())
+
+        # Regression loss
+        if regressor_targets is not None:
+            if self.config.regressor_loss == "mse":
+                loss_fct = nn.MSELoss()
+                loss += (1 - loss_alpha) * loss_fct(semantic, regressor_targets)
+
+        if not return_dict:
+            output = (logits, semantic) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return LexicalAccessOutput(
+            loss=loss,
+            logits=logits,
+            semantic=semantic,
+            wav2vec2_hidden_states=outputs.hidden_states,
+            wav2vec2_attentions=outputs.attentions,
+
+            # TODO expose RNN states
             rnn_hidden_states=rnn_out,
         )
