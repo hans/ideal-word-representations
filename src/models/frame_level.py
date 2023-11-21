@@ -2,6 +2,7 @@
 Defines SLM frame-level classifier and regression models.
 """
 
+import copy
 from dataclasses import dataclass
 import logging
 from typing import Optional, Tuple, Union, List, Dict
@@ -239,7 +240,7 @@ class LexicalAccessDataCollator:
                 onset = int(onset * compression_ratio)
                 offset = int(offset * compression_ratio)
 
-                targets[i][onset:offset, :] = self.model.word_representations[word_id]
+                targets[i][onset:offset, :] = torch.tensor(self.model.word_representations[word_id])
 
         feature_extractor = SemanticTargetFeatureExtractor(
             feature_size=self.regression_target_size,
@@ -332,6 +333,16 @@ class LexicalAccessConfig(PretrainedConfig):
         if self.regressor_loss not in [None, "mse"]:
             raise ValueError(f"Regressor loss {self.regressor_loss} not supported.")
 
+    @classmethod
+    def from_configs(cls, encoder_config: PretrainedConfig,
+                     **kwargs) -> PretrainedConfig:
+        return cls(encoder_config=encoder_config.to_dict(), **kwargs)
+
+    def to_dict(self):
+        output = copy.deepcopy(self.__dict__)
+        output["encoder_config"] = self.encoder_config.to_dict()
+        return output
+
 
 class FrameLevelLexicalAccess(PreTrainedModel):
     """
@@ -345,7 +356,7 @@ class FrameLevelLexicalAccess(PreTrainedModel):
                  config: LexicalAccessConfig,
                  word_vocabulary: List[str],
                  word_representations: torch.FloatTensor,
-                 encoder: Optional[Wav2Vec2Model] = None):
+                 encoder_name_or_path: Optional[str] = None):
         super().__init__(config)
         self.config = config
 
@@ -354,10 +365,11 @@ class FrameLevelLexicalAccess(PreTrainedModel):
         assert len(word_vocabulary) == word_representations.shape[0]
         self.word_to_idx = {word: idx for idx, word in enumerate(word_vocabulary)}
 
-        if encoder is None:
+        if encoder_name_or_path is None:
             self.encoder = Wav2Vec2Model(config.encoder_config)
         else:
-            self.encoder = encoder
+            self.encoder = Wav2Vec2Model.from_pretrained(encoder_name_or_path,
+                                                         config=config.encoder_config)
 
         # RNN
         # TODO expose LSTM states

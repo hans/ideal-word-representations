@@ -1,7 +1,8 @@
 defaults:
   - _self_
   - dataset: timit_phonemes
-  - collator: multilabel_phoneme
+  - semantic_targets: type_random
+  - collator: dual_phoneme
   - model: w2v2_drop6_nornn
 
   - override hydra/job_logging: colorlog
