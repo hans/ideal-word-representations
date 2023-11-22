@@ -432,13 +432,19 @@ class FrameLevelLexicalAccess(PreTrainedModel):
         # Classification loss
         loss = torch.tensor(0.).to(logits)
         loss_alpha = torch.tensor(loss_alpha).to(logits)
+        # Bizarre logic I know, I just wanted to add a loss scaler easily
+        if loss_alpha > 1:
+            loss_alpha_classifier, loss_alpha_regressor = 1 / loss_alpha, loss_alpha
+        else:
+            loss_alpha_classifier, loss_alpha_regressor = loss_alpha, 1 - loss_alpha
+
         loss_mask = target_mask == 1 if target_mask is not None else None
         if classifier_labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
             
             active_logits = logits[loss_mask] if loss_mask is not None else logits
             active_labels = classifier_labels[loss_mask] if loss_mask is not None else classifier_labels
-            loss += loss_alpha * loss_fct(active_logits, active_labels.float())
+            loss += loss_alpha_classifier * loss_fct(active_logits, active_labels.float())
 
         # Regression loss
         if regressor_targets is not None and self.config.regressor_loss is not None:
@@ -449,7 +455,7 @@ class FrameLevelLexicalAccess(PreTrainedModel):
 
             active_semantic = semantic[loss_mask] if loss_mask is not None else semantic
             active_targets = regressor_targets[loss_mask] if loss_mask is not None else regressor_targets
-            loss += (1 - loss_alpha) * loss_fct(semantic, regressor_targets)
+            loss += loss_alpha_regressor * loss_fct(active_semantic, active_targets)
 
         if not return_dict:
             output = (logits, semantic) + outputs[2:]
