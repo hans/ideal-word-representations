@@ -307,6 +307,7 @@ class LexicalAccessConfig(PretrainedConfig):
 
             regressor_target_size: int = 32,
             regressor_loss: str = "mse",
+            loss_alpha: float = 0.5,
             **kwargs):
         super().__init__(**kwargs)
 
@@ -408,7 +409,7 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             target_mask=None,
             classifier_labels=None,
             regressor_targets=None,
-            loss_alpha=0.5,
+            loss_alpha=None,
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         outputs = self.encoder(
@@ -431,6 +432,9 @@ class FrameLevelLexicalAccess(PreTrainedModel):
 
         # Classification loss
         loss = torch.tensor(0.).to(logits)
+
+        if loss_alpha is None:
+            loss_alpha = self.config.loss_alpha
         loss_alpha = torch.tensor(loss_alpha).to(logits)
         # Bizarre logic I know, I just wanted to add a loss scaler easily
         if loss_alpha > 1:

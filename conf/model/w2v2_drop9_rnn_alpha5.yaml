@@ -3,7 +3,9 @@ reinit_feature_extractor_weights: false
 reinit_encoder_weights: false
 drop_layers: 9
 
-rnn_num_layers: 0
-rnn_hidden_size: 768
+rnn_num_layers: 2
+rnn_hidden_size: 128
 
 classifier_bias: true
+
+loss_alpha: 5.0
