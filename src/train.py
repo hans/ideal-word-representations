@@ -17,13 +17,13 @@ from src.models.frame_level import FrameLevelLexicalAccess, \
 def make_model_init(
         model_name_or_path,
         config,
-        word_vocabulary, word_representations,
+        word_representations,
         device="cpu"):
     def model_init(trial):
         # encoder = transformers.Wav2Vec2Model.from_pretrained(
         #     model_name_or_path, config=config.encoder_config).to(device)
         model = FrameLevelLexicalAccess(
-            config, word_vocabulary, word_representations,
+            config, word_representations,
             encoder_name_or_path=model_name_or_path).to(device)
 
         model.freeze_feature_extractor()
@@ -185,11 +185,12 @@ def train(config: DictConfig):
     model_config = LexicalAccessConfig.from_configs(
         encoder_config=encoder_config,
         num_labels=tokenizer.vocab_size,
+        word_vocabulary=all_words,
         regressor_target_size=word_representations.shape[1],
         **config.model)
     model_init = make_model_init(
         config.model.base_model, model_config,
-        all_words, word_representations,
+        torch.tensor(word_representations).to(config.device),
         device=config.device)
 
     collator = instantiate(
@@ -203,6 +204,7 @@ def train(config: DictConfig):
     # Don't directly use `instantiate` with `TrainingArguments` or `Trainer` because the
     # type validation stuff is craaaaazy.
     # We also have to use `to_object` to make sure the params are JSON-serializable
+    
     training_args = transformers.TrainingArguments(
         output_dir=HydraConfig.get().runtime.output_dir,
         **OmegaConf.to_object(config.training_args))

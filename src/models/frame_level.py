@@ -305,8 +305,10 @@ class LexicalAccessConfig(PretrainedConfig):
             classifier_num_labels: int = 32,
             classifier_bias: bool = True,
 
+            word_vocabulary: Optional[List[str]] = None,
             regressor_target_size: int = 32,
             regressor_loss: str = "mse",
+
             loss_alpha: float = 0.5,
             **kwargs):
         super().__init__(**kwargs)
@@ -328,11 +330,14 @@ class LexicalAccessConfig(PretrainedConfig):
         self.classifier_num_labels = classifier_num_labels
         self.classifier_bias = classifier_bias
 
+        self.word_vocabulary = word_vocabulary
         self.regressor_target_size = regressor_target_size
         self.regressor_loss = regressor_loss
 
         if self.regressor_loss not in [None, "mse"]:
             raise ValueError(f"Regressor loss {self.regressor_loss} not supported.")
+        
+        self.loss_alpha = loss_alpha
 
     @classmethod
     def from_configs(cls, encoder_config: PretrainedConfig,
@@ -355,16 +360,17 @@ class FrameLevelLexicalAccess(PreTrainedModel):
 
     def __init__(self,
                  config: LexicalAccessConfig,
-                 word_vocabulary: List[str],
-                 word_representations: torch.FloatTensor,
+                 word_representations: Optional[torch.FloatTensor] = None,
                  encoder_name_or_path: Optional[str] = None):
         super().__init__(config)
         self.config = config
 
-        self.word_vocabulary = word_vocabulary
-        self.word_representations = word_representations
-        assert len(word_vocabulary) == word_representations.shape[0]
-        self.word_to_idx = {word: idx for idx, word in enumerate(word_vocabulary)}
+        word_vocab_size = len(config.word_vocabulary) if config.word_vocabulary is not None else 0
+        if word_representations is None:
+            word_representations = torch.zeros(word_vocab_size, config.regressor_target_size)
+        self.word_representations = nn.Parameter(word_representations, requires_grad=False)
+        assert len(config.word_vocabulary) == word_representations.shape[0]
+        self.word_to_idx = {word: idx for idx, word in enumerate(config.word_vocabulary)}
 
         if encoder_name_or_path is None:
             self.encoder = Wav2Vec2Model(config.encoder_config)
