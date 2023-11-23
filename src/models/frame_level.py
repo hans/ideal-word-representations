@@ -14,6 +14,7 @@ from transformers import Wav2Vec2Model, Wav2Vec2ForCTC, Wav2Vec2Processor, \
     Wav2Vec2Config, PretrainedConfig, \
     BatchFeature, PreTrainedModel, SequenceFeatureExtractor
 
+from src.models.rnn import ExposedLSTM
 from src.models.transformer import PhoneticTargetFeatureExtractor
 
 
@@ -307,7 +308,7 @@ class LexicalAccessConfig(PretrainedConfig):
 
             word_vocabulary: Optional[List[str]] = None,
             regressor_target_size: int = 32,
-            regressor_loss: str = "mse",
+            regressor_loss: str = "cosine",
 
             loss_alpha: float = 0.5,
             **kwargs):
@@ -334,7 +335,7 @@ class LexicalAccessConfig(PretrainedConfig):
         self.regressor_target_size = regressor_target_size
         self.regressor_loss = regressor_loss
 
-        if self.regressor_loss not in [None, "mse"]:
+        if self.regressor_loss not in [None, "mse", "cosine"]:
             raise ValueError(f"Regressor loss {self.regressor_loss} not supported.")
         
         self.loss_alpha = loss_alpha
@@ -361,7 +362,7 @@ class FrameLevelLexicalAccess(PreTrainedModel):
     def __init__(self,
                  config: LexicalAccessConfig,
                  word_representations: Optional[torch.FloatTensor] = None,
-                 encoder_name_or_path: Optional[str] = None):
+                 encoder_name_or_path: Optional[str] = None,):
         super().__init__(config)
         self.config = config
 
@@ -379,8 +380,12 @@ class FrameLevelLexicalAccess(PreTrainedModel):
                                                          config=config.encoder_config)
 
         # RNN
-        # TODO expose LSTM states
-        rnn_module = nn.LSTM if config.rnn_num_layers > 0 else DummyIdentityRNN
+        if config.rnn_num_layers == 0:
+            rnn_module = DummyIdentityRNN
+        elif config.expose_rnn:
+            rnn_module = ExposedLSTM
+        else:
+            rnn_module = nn.LSTM
         self.rnn = rnn_module(
             input_size=config.encoder_config.hidden_size,
             hidden_size=config.rnn_hidden_size,
@@ -430,7 +435,13 @@ class FrameLevelLexicalAccess(PreTrainedModel):
         hidden_states = self.encoder_dropout(hidden_states)
 
         # RNN
-        rnn_out, _ = self.rnn(hidden_states)
+        if self.config.expose_rnn:
+            (rnn_outputs, rnn_cells, rnn_input_gates,
+             rnn_forget_gates, rnn_cell_gates, rnn_output_gates) = self.rnn(hidden_states)
+            
+            rnn_out = rnn_outputs[-1]
+        else:
+            rnn_out, _ = self.rnn(hidden_states)
 
         # Outputs
         logits = self.classifier(self.classifier_dropout(rnn_out))
@@ -458,14 +469,15 @@ class FrameLevelLexicalAccess(PreTrainedModel):
 
         # Regression loss
         if regressor_targets is not None and self.config.regressor_loss is not None:
-            if self.config.regressor_loss == "mse":
-                loss_fct = nn.MSELoss()
-            else:
-                raise ValueError(f"Regressor loss {self.config.regressor_loss} not supported.")
-
             active_semantic = semantic[loss_mask] if loss_mask is not None else semantic
             active_targets = regressor_targets[loss_mask] if loss_mask is not None else regressor_targets
-            loss += loss_alpha_regressor * loss_fct(active_semantic, active_targets)
+
+            if self.config.regressor_loss == "mse":
+                loss += loss_alpha_regressor * nn.MSELoss()(active_semantic, active_targets)
+            elif self.config.regressor_loss == "cosine":
+                loss += loss_alpha_regressor * nn.CosineEmbeddingLoss()(active_semantic, active_targets, target=torch.ones(active_semantic.shape[0])).to(active_semantic)
+            else:
+                raise ValueError(f"Regressor loss {self.config.regressor_loss} not supported.")
 
         if not return_dict:
             output = (logits, semantic) + outputs[2:]
