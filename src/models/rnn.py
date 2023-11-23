@@ -10,7 +10,7 @@ class ExposedLSTM(nn.Module):
     """
 
     def __init__(self, input_size, hidden_size,
-                 num_layers=1, bias=True,
+                 num_layers=1, bias=True, bidirectional=False,
                  batch_first=False):
         super().__init__()
 
@@ -19,13 +19,19 @@ class ExposedLSTM(nn.Module):
         self.num_layers = num_layers
         self.batch_first = batch_first
 
+        self.bias = bias
+        if bidirectional:
+            raise NotImplementedError("Bidirectional LSTM not implemented")
+
         # Define LSTM parameters
         for i in range(num_layers):
             layer_input_size = input_size if i == 0 else hidden_size
             setattr(self, f"weight_ih_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size, layer_input_size)))
             setattr(self, f"weight_hh_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size, hidden_size)))
-            setattr(self, f"bias_ih_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size)))
-            setattr(self, f"bias_hh_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size)))
+
+            if self.bias:
+                setattr(self, f"bias_ih_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size)))
+                setattr(self, f"bias_hh_l{i}", nn.Parameter(torch.Tensor(4 * hidden_size)))
 
         # Initialize parameters
         self.init_weights()
@@ -54,8 +60,12 @@ class ExposedLSTM(nn.Module):
 
             W_ii, W_if, W_ic, W_io = torch.split(getattr(self, f"weight_ih_l{i}"), self.hidden_size, dim=0)
             W_hi, W_hf, W_hc, W_ho = torch.split(getattr(self, f"weight_hh_l{i}"), self.hidden_size, dim=0)
-            b_ii, b_if, b_ic, b_io = torch.split(getattr(self, f"bias_ih_l{i}"), self.hidden_size, dim=0)
-            b_hi, b_hf, b_hc, b_ho = torch.split(getattr(self, f"bias_hh_l{i}"), self.hidden_size, dim=0)
+
+            if self.bias:
+                b_ii, b_if, b_ic, b_io = torch.split(getattr(self, f"bias_ih_l{i}"), self.hidden_size, dim=0)
+                b_hi, b_hf, b_hc, b_ho = torch.split(getattr(self, f"bias_hh_l{i}"), self.hidden_size, dim=0)
+            else:
+                b_ii = b_if = b_ic = b_io = b_hi = b_hf = b_hc = b_ho = 0
 
             for t in range(seq_len):
                 if i == 0:
