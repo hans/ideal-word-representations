@@ -281,8 +281,9 @@ class LexicalAccessDataCollator:
         batch["target_mask"] = label_features["attention_mask"]
         batch["classifier_labels"] = label_features["phones"]
 
-        regression_features = self._collate_frame_regression_targets(features, batch)
-        batch["regressor_targets"] = regression_features["targets"]
+        if self.model.config.word_vocabulary is not None:
+            regression_features = self._collate_frame_regression_targets(features, batch)
+            batch["regressor_targets"] = regression_features["targets"]
 
         if "idx" in features[0]:
             batch["idx"] = torch.tensor([feature["idx"] for feature in features])
@@ -376,8 +377,10 @@ class FrameLevelLexicalAccess(PreTrainedModel):
         if word_representations is None:
             word_representations = torch.zeros(word_vocab_size, config.regressor_target_size)
         self.word_representations = nn.Parameter(word_representations, requires_grad=False)
-        assert len(config.word_vocabulary) == word_representations.shape[0]
-        self.word_to_idx = {word: idx for idx, word in enumerate(config.word_vocabulary)}
+        self.word_to_idx = {}
+        if config.word_vocabulary is not None:
+            assert len(config.word_vocabulary) == word_representations.shape[0]
+            self.word_to_idx = {word: idx for idx, word in enumerate(config.word_vocabulary)}
 
         if encoder_name_or_path is None:
             self.encoder = Wav2Vec2Model(config.encoder_config)
