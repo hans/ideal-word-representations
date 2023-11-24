@@ -27,7 +27,10 @@ class RecurrentClassifierOutput(ModelOutput):
     logits: torch.FloatTensor = None
     wav2vec2_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     wav2vec2_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    rnn_hidden_states: Optional[torch.FloatTensor] = None
+    rnn_hidden_states: \
+        Optional[Union[torch.FloatTensor,
+                       Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor,
+                             torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]]] = None
 
 
 @dataclass
@@ -281,6 +284,9 @@ class LexicalAccessDataCollator:
         regression_features = self._collate_frame_regression_targets(features, batch)
         batch["regressor_targets"] = regression_features["targets"]
 
+        if "idx" in features[0]:
+            batch["idx"] = torch.tensor([feature["idx"] for feature in features])
+
         return batch
 
 
@@ -421,7 +427,10 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             classifier_labels=None,
             regressor_targets=None,
             loss_alpha=None,
+            **kwargs,
     ):
+        if kwargs:
+            L.warning(f"Unused kwargs: {kwargs}")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         outputs = self.encoder(
             input_values,
@@ -475,13 +484,21 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             if self.config.regressor_loss == "mse":
                 loss += loss_alpha_regressor * nn.MSELoss()(active_semantic, active_targets)
             elif self.config.regressor_loss == "cosine":
-                loss += loss_alpha_regressor * nn.CosineEmbeddingLoss()(active_semantic, active_targets, target=torch.ones(active_semantic.shape[0])).to(active_semantic)
+                loss += loss_alpha_regressor * nn.CosineEmbeddingLoss()(active_semantic, active_targets, target=torch.ones(active_semantic.shape[0]).to(active_semantic))
             else:
                 raise ValueError(f"Regressor loss {self.config.regressor_loss} not supported.")
 
         if not return_dict:
             output = (logits, semantic) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
+
+        rnn_ret = None
+        if output_hidden_states:
+            if self.config.expose_rnn:
+                rnn_ret = (rnn_outputs, rnn_cells, rnn_input_gates,
+                           rnn_forget_gates, rnn_cell_gates, rnn_output_gates)
+            else:
+                rnn_ret = rnn_out
 
         return LexicalAccessOutput(
             loss=loss,
@@ -490,6 +507,5 @@ class FrameLevelLexicalAccess(PreTrainedModel):
             wav2vec2_hidden_states=outputs.hidden_states,
             wav2vec2_attentions=outputs.attentions,
 
-            # TODO expose RNN states
-            rnn_hidden_states=rnn_out,
+            rnn_hidden_states=rnn_ret,
         )
