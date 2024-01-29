@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from transformers import PreTrainedModel, PretrainedConfig
 from transformers.file_utils import ModelOutput
 from tqdm.auto import tqdm
 
@@ -47,17 +48,29 @@ class ContrastiveEmbeddingModelOutput(ModelOutput):
     embeddings: torch.FloatTensor = None
 
 
-class ContrastiveEmbeddingModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, tau=0.1):
-        super(ContrastiveEmbeddingModel, self).__init__()
-        self.rnn = RNNModel(input_dim, hidden_dim, output_dim)
-        self.tau = tau
+@dataclass
+class ContrastiveEmbeddingModelConfig(PretrainedConfig):
+    input_dim: int = 4
+    hidden_dim: int = 256
+    output_dim: int = 4
+    tau: float = 0.1
+
+
+class ContrastiveEmbeddingModel(PreTrainedModel):
+    config_class = ContrastiveEmbeddingModelConfig
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.rnn = RNNModel(config.input_dim,
+                            config.hidden_dim,
+                            config.output_dim)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
                 return_loss=True, return_embeddings=False):
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
-        loss = ContrastiveEmbeddingObjective(tau=self.tau)(embeddings, pos_embeddings, neg_embeddings)
+        loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau)
+        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings)
 
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
