@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from transformers.file_utils import ModelOutput
+from tqdm.auto import tqdm
 
 
 class RNNModel(nn.Module):
