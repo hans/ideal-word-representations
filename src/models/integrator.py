@@ -3,6 +3,7 @@ import random
 from typing import Optional
 
 from datasets import Dataset
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -130,6 +131,9 @@ def get_sequence(F, start_index, end_index, max_length):
 
 def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
                     layer: Optional[int] = None) -> Dataset:
+    """
+    Prepare a negative-sampling dataset for contrastive embedding learning.
+    """
     if layer is None and dataset.hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = dataset.hidden_state_dataset.get_layer(layer if layer is not None else 0)
@@ -180,6 +184,38 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
     assert (ret["neg_length"] > 0).all()
 
     return ret
+
+
+def compute_embeddings(model: ContrastiveEmbeddingModel,
+                       dataset: SpeechEquivalenceDataset,
+                       batch_size=16,
+                       device=None) -> torch.Tensor:
+    """
+    Compute integrator embeddings for a given model on a speech
+    equivalence classing dataset.
+    """
+    assert model.is_compatible_with(dataset)
+    if device is not None:
+        model = model.to(device)
+    device = model.device
+
+    model_representations = []
+
+    batch_size = 16
+    F = dataset.hidden_state_dataset.get_layer(model.config.base_model_layer)
+    for batch_start in range(0, dataset.hidden_state_dataset.num_frames, batch_size):
+        batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, dataset.hidden_state_dataset.num_frames))
+        batch = torch.stack([get_sequence(F, dataset.S[idx], idx, model.config.max_length)
+                            for idx in batch_idxs])
+        
+        lengths = torch.minimum(dataset.lengths[batch_idxs], torch.tensor(model.config.max_length))
+        # HACK
+        lengths[lengths <= 0] = 1
+
+        with torch.no_grad():
+            model_representations.append(model.compute_embeddings(batch, lengths))
+
+    return torch.cat(model_representations, dim=0)
 
 
 # def prepare_batches(F, Q, S, max_length, batch_size=32):
