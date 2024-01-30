@@ -39,6 +39,9 @@ class SpeechHiddenStateDataset:
         assert self.states.ndim == 3
         assert len(self.flat_idxs) == self.states.shape[0]
 
+    def get_layer(self, layer: int) -> torch.Tensor:
+        return self.states[:, layer, :]
+
     def __repr__(self):
         return f"SpeechHiddenStateDataset({self.model_name}, {self.num_items} items, {self.num_frames} frames, {self.num_layers} layers, {self.states.shape[2]} hidden size)"
     __str__ = __repr__
@@ -54,6 +57,10 @@ class SpeechHiddenStateDataset:
     @property
     def num_layers(self) -> int:
         return self.states.shape[1]
+    
+    @property
+    def hidden_size(self) -> int:
+        return self.states.shape[2]
 
     @cached_property
     def frames_by_item(self) -> dict[int, tuple[int, int]]:

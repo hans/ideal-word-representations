@@ -67,6 +67,13 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     output_dim: int = 4
     tau: float = 0.1
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def is_compatible_with(self, dataset: SpeechEquivalenceDataset):
+        return self.base_model_ref == dataset.hidden_state_dataset.model_name and \
+                self.input_dim == dataset.hidden_state_dataset.hidden_size
+
 
 class ContrastiveEmbeddingModel(PreTrainedModel):
     config_class = ContrastiveEmbeddingModelConfig
@@ -76,6 +83,9 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         self.rnn = RNNModel(config.input_dim,
                             config.hidden_dim,
                             config.output_dim)
+        
+    def is_compatible_with(self, dataset: SpeechEquivalenceDataset):
+        return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
                 return_loss=True, return_embeddings=False):
@@ -120,11 +130,11 @@ def get_sequence(F, start_index, end_index, max_length):
 
 def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
                     layer: Optional[int] = None) -> Dataset:
-    dataset = []
-
     if layer is None and dataset.hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = dataset.hidden_state_dataset.get_layer(layer if layer is not None else 0)
+
+    ret = []
     
     lengths = torch.minimum(dataset.lengths, torch.tensor(max_length))
     # TODO this is just a hack
@@ -151,17 +161,17 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
             pos_seq = get_sequence(F, dataset.S[pos_idx], pos_idx, max_length)
             neg_seq = get_sequence(F, dataset.S[neg_idx], neg_idx, max_length)
 
-            dataset.append((example_seq, lengths[i],
-                            pos_seq, lengths[pos_idx],
-                            neg_seq, lengths[neg_idx]))
+            ret.append((example_seq, lengths[i],
+                        pos_seq, lengths[pos_idx],
+                        neg_seq, lengths[neg_idx]))
 
     ret = Dataset.from_dict({
-        "example": [x[0] for x in dataset],
-        "example_length": [x[1] for x in dataset],
-        "pos": [x[2] for x in dataset],
-        "pos_length": [x[3] for x in dataset],
-        "neg": [x[4] for x in dataset],
-        "neg_length": [x[5] for x in dataset],
+        "example": [x[0] for x in ret],
+        "example_length": [x[1] for x in ret],
+        "pos": [x[2] for x in ret],
+        "pos_length": [x[3] for x in ret],
+        "neg": [x[4] for x in ret],
+        "neg_length": [x[5] for x in ret],
     }).with_format("torch")
 
     # Sanity checks
