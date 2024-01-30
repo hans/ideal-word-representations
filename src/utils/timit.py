@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset, load_from_disk, DatasetDict
 import transformers
 import pandas as pd
 import soundfile as sf
@@ -163,7 +163,7 @@ def prepare_timit_corpus(data_dir,
 def load_or_prepare_timit_corpus(processed_data_dir,
                                  raw_data_dir,
                                  processor: transformers.Wav2Vec2Processor,
-                                 drop_phones=None):
+                                 drop_phones=None) -> DatasetDict:
     """
     Load preprocessed TIMIT corpus if it exists, or compute and save to
     the preprocessed directory.

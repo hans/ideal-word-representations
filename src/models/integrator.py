@@ -50,6 +50,15 @@ class ContrastiveEmbeddingModelOutput(ModelOutput):
 
 @dataclass
 class ContrastiveEmbeddingModelConfig(PretrainedConfig):
+    # TODO how to reference other model here?
+    base_model_ref: str = "facebook/wav2vec2-base"
+    base_model_layer: int = 6
+
+    # equivalence-classing config
+    equivalence_classer: str = "phoneme_within_word_prefix"
+
+    # NN config
+    max_length: int = 20
     input_dim: int = 4
     hidden_dim: int = 256
     output_dim: int = 4
