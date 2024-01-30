@@ -2,6 +2,7 @@
 State space analysis tools for integrator models.
 """
 
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -13,10 +14,24 @@ from src.models.integrator import ContrastiveEmbeddingModel, compute_embeddings
 
 
 
+@dataclass
+class StateSpaceAnalysisSpec:
+
+    # Number of frames in the dataset associated with this state space spec.
+    # Used for validation.
+    total_num_frames: int
+
+    # Analyze K categories of N state space trajectories.
+    target_frame_spans: list[list[tuple[int, int]]]
+
+    def is_compatible_with(self, dataset: SpeechEquivalenceDataset) -> bool:
+        return self.total_num_frames == dataset.hidden_state_dataset.num_frames
+
+
 def prepare_word_trajectory_spec(
         dataset: SpeechEquivalenceDataset,
         target_words: list[tuple[str, ...]],
-) -> list[list[tuple[int, int]]]:
+) -> StateSpaceAnalysisSpec:
     """
     Retrieve a list of frame spans describing a speech perception
     trajectory matching the given target words.
@@ -32,22 +47,25 @@ def prepare_word_trajectory_spec(
         start_frames = dataset.S[final_frames]
         frame_bounds.append(list(zip(start_frames.numpy(), final_frames.numpy())))
 
-    return frame_bounds
+    return StateSpaceAnalysisSpec(
+        target_frame_spans=frame_bounds,
+        total_num_frames=dataset.hidden_state_dataset.num_frames,
+    )
 
 
 
 def prepare_state_trajectory(
         embeddings: np.ndarray,
-        trajectory_spec: list[list[tuple[int, int]]],
+        spec: StateSpaceAnalysisSpec,
 ) -> list[np.ndarray]:
     """
     Prepare the state trajectory for the given dataset and model embeddings.
     """
     max_num_frames = max(max(end - start + 1 for start, end in trajectory_spec)
-                         for trajectory_spec in trajectory_spec)
+                         for trajectory_spec in spec.target_frame_spans)
     ret = []
 
-    for i, frame_spec in enumerate(trajectory_spec):
+    for i, frame_spec in enumerate(spec.target_frame_spans):
         num_instances = len(frame_spec)
         trajectory_frames = np.zeros((num_instances, max_num_frames, embeddings.shape[1]))
         for j, (start, end) in enumerate(frame_spec):
