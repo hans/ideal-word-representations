@@ -182,9 +182,8 @@ def make_timit_equivalence_dataset(name: str,
                 if num_frames_per_phoneme is not None and len(ks) > num_frames_per_phoneme:
                     ks = ks[-num_frames_per_phoneme:]
                 for k in ks:
-                    for classer, fn in equivalence_classers.items():
-                        class_key = fn(word, j)
-                        frame_groups[class_key].append((idx, k))
+                    class_label = equivalence_classers[classer](word, j)
+                    frame_groups[class_label].append((idx, k))
 
     dataset.map(process_item, with_indices=True, desc="Extracting hidden states")
 
