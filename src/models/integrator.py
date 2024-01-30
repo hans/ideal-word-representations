@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import random
+from typing import Optional
 
 from datasets import Dataset
 import torch
@@ -9,6 +10,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from transformers import PreTrainedModel, PretrainedConfig
 from transformers.file_utils import ModelOutput
 from tqdm.auto import tqdm
+
+from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
 
 class RNNModel(nn.Module):
@@ -115,24 +118,25 @@ def get_sequence(F, start_index, end_index, max_length):
     return sequence
 
 
-def prepare_dataset(F, Q, S, max_length):
+def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
+                    layer: Optional[int] = None) -> Dataset:
     dataset = []
-    assert F.shape[0] == Q.shape[0] == S.shape[0]
-    n_F = F.size(0)
 
-    lengths = torch.arange(n_F) - S
-    lengths = torch.minimum(lengths, torch.tensor(max_length))
+    if layer is None and dataset.hidden_state_dataset.num_layers > 1:
+        raise ValueError("Must specify layer if there are multiple layers")
+    F = dataset.hidden_state_dataset.get_layer(layer if layer is not None else 0)
+    
+    lengths = torch.minimum(dataset.lengths, torch.tensor(max_length))
     # TODO this is just a hack
     lengths[lengths == 0] = 1
-    lengths[S == -1] = -1
 
-    non_null_frames = (Q != -1).nonzero(as_tuple=True)[0]
+    non_null_frames = (dataset.Q != -1).nonzero(as_tuple=True)[0]
     for i in tqdm(non_null_frames):
         if lengths[i] == -1:
             continue
 
-        pos_indices = (Q == Q[i]).nonzero(as_tuple=True)[0]
-        neg_indices = ((Q != -1) & (Q != Q[i])).nonzero(as_tuple=True)[0]
+        pos_indices = (dataset.Q == dataset.Q[i]).nonzero(as_tuple=True)[0]
+        neg_indices = ((dataset.Q != -1) & (dataset.Q != dataset.Q[i])).nonzero(as_tuple=True)[0]
 
         if len(pos_indices) > 1 and len(neg_indices) > 0:
             pos_indices = pos_indices[pos_indices != i]
@@ -143,9 +147,9 @@ def prepare_dataset(F, Q, S, max_length):
             # per example, especially in sparser Q cases.
 
             # Extract sequences
-            example_seq = get_sequence(F, S[i], i, max_length)
-            pos_seq = get_sequence(F, S[pos_idx], pos_idx, max_length)
-            neg_seq = get_sequence(F, S[neg_idx], neg_idx, max_length)
+            example_seq = get_sequence(F, dataset.S[i], i, max_length)
+            pos_seq = get_sequence(F, dataset.S[pos_idx], pos_idx, max_length)
+            neg_seq = get_sequence(F, dataset.S[neg_idx], neg_idx, max_length)
 
             dataset.append((example_seq, lengths[i],
                             pos_seq, lengths[pos_idx],
