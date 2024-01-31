@@ -16,12 +16,18 @@ EquivalenceClasser: TypeAlias = Callable[[Any, int], Hashable]
 equivalence_classers: dict[str, EquivalenceClasser] = {
     "phoneme_within_word_prefix": 
         lambda word, i: tuple(phone["phone"] for phone in word[:i+1]),
+    "phoneme": lambda word, i: word[i]["phone"],
+
+    "phoneme_fixed": lambda word, i: word[i]["phone"],
 }
 
 # Each equivalence classer also defines a function to compute the start of the
 # event which is a sufficient statistic for the class.
 start_references = {
     "phoneme_within_word_prefix": "word",
+    "phoneme": "word",
+
+    "phoneme_fixed": "fixed",
 }
 
 
@@ -229,6 +235,22 @@ def make_timit_equivalence_dataset(name: str,
 
                     for j in range(phone_start, phone_end + 1):
                         S[flat_idx_offset + j] = flat_idx_offset + phone_start
+    elif start_reference == "fixed":
+        # TODO magic number: fixed number of frames over which to integrate
+        fixed_length = 20
+        def compute_start(item, idx):
+            flat_idx_offset, flat_idx_end = frames_by_item[idx]
+            num_frames = flat_idx_end - flat_idx_offset
+            compression_ratio = num_frames / len(item["input_values"])
+
+            for word in item["word_phonemic_detail"]:
+                for phone in word:
+                    phone_str = phone["phone"]
+                    phone_start = int(phone["start"] * compression_ratio)
+                    phone_end = int(phone["stop"] * compression_ratio)
+
+                    for j in range(phone_start, phone_end + 1):
+                        S[flat_idx_offset + j] = max(flat_idx_offset, flat_idx_offset + j - fixed_length)
     else:
         raise ValueError(f"Unknown start reference {start_reference}")
     

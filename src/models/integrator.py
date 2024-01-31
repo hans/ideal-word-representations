@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import PreTrainedModel, PretrainedConfig
 from transformers.file_utils import ModelOutput
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
@@ -203,7 +203,7 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
 
     batch_size = 16
     F = dataset.hidden_state_dataset.get_layer(model.config.base_model_layer)
-    for batch_start in range(0, dataset.hidden_state_dataset.num_frames, batch_size):
+    for batch_start in trange(0, dataset.hidden_state_dataset.num_frames, batch_size):
         batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, dataset.hidden_state_dataset.num_frames))
         batch = torch.stack([get_sequence(F, dataset.S[idx], idx, model.config.max_length)
                             for idx in batch_idxs])
