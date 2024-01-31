@@ -21,8 +21,13 @@ class StateSpaceAnalysisSpec:
     # Used for validation.
     total_num_frames: int
 
+    labels: list[str]
+
     # Analyze K categories of N state space trajectories.
     target_frame_spans: list[list[tuple[int, int]]]
+
+    def __post_init__(self):
+        assert len(self.target_frame_spans) == len(self.labels)
 
     def is_compatible_with(self, dataset: SpeechEquivalenceDataset) -> bool:
         return self.total_num_frames == dataset.hidden_state_dataset.num_frames
@@ -49,6 +54,7 @@ def prepare_word_trajectory_spec(
 
     return StateSpaceAnalysisSpec(
         target_frame_spans=frame_bounds,
+        labels=target_words,
         total_num_frames=dataset.hidden_state_dataset.num_frames,
     )
 
