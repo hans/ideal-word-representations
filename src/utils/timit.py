@@ -174,6 +174,6 @@ def load_or_prepare_timit_corpus(processed_data_dir,
     if Path(processed_data_dir).exists():
         corpus = load_from_disk(processed_data_dir)
     else:
-        corpus = prepare_timit_corpus(raw_data_dir, processor, drop_phones)
+        corpus = prepare_timit_corpus(raw_data_dir, processor, drop_phones=drop_phones)
         corpus.save_to_disk(processed_data_dir)
     return corpus
