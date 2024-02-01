@@ -186,7 +186,8 @@ def make_timit_equivalence_dataset(name: str,
 
                 ks = list(range(phone_start, phone_end + 1))
                 if num_frames_per_phoneme is not None and len(ks) > num_frames_per_phoneme:
-                    ks = ks[-num_frames_per_phoneme:]
+                    # Sample uniformly spaced frames within the span of the phoneme
+                    ks = np.linspace(phone_start, phone_end, num_frames_per_phoneme).round().astype(int)
                 for k in ks:
                     class_label = equivalence_classers[classer](word, j)
                     frame_groups[class_label].append((idx, k))
