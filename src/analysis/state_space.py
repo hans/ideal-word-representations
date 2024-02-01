@@ -24,6 +24,7 @@ class StateSpaceAnalysisSpec:
     labels: list[str]
 
     # Analyze K categories of N state space trajectories.
+    # Tuples are start and end indices, inclusive.
     target_frame_spans: list[list[tuple[int, int]]]
 
     def __post_init__(self):
