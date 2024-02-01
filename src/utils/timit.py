@@ -121,6 +121,7 @@ def group_phonetic_detail(item, drop_phones=None, key="phonetic_detail"):
 
 def prepare_timit_corpus(data_dir,
                          processor: transformers.Wav2Vec2Processor,
+                         add_phoneme_targets=False,
                          drop_phones=None):
     """
     Load and prepare TIMIT corpus for training.
@@ -151,11 +152,13 @@ def prepare_timit_corpus(data_dir,
         return batch
     corpus = corpus.map(prepare_audio)
 
-    twfe = TilingWordFeatureExtractor2(processor.tokenizer, item_key="word_phonemic_detail")
-    def add_features(example):
-        example["phone_targets"] = twfe(example)
-        return example
-    corpus = corpus.map(add_features, load_from_cache_file=False)
+    if add_phoneme_targets:
+        # TODO stale code
+        twfe = TilingWordFeatureExtractor2(processor.tokenizer, item_key="word_phonemic_detail")
+        def add_features(example):
+            example["phone_targets"] = twfe(example)
+            return example
+        corpus = corpus.map(add_features, load_from_cache_file=False)
     
     return corpus
 
