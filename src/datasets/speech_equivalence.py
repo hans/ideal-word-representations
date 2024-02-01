@@ -138,6 +138,7 @@ class SpeechEquivalenceDataset:
 def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
                                    model: transformers.PreTrainedModel,
+                                   layer: int,
                                    classer: str,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
@@ -161,6 +162,7 @@ def make_timit_equivalence_dataset(name: str,
             
         # num_layers * sequence_length * hidden_size
         batch_hidden = torch.stack(output.hidden_states).squeeze(1).cpu()
+        batch_hidden = batch_hidden[layer].unsqueeze(0)
 
         flat_idx_offset = len(flat_idxs)
         flat_idxs.extend([(idx, i) for i in range(batch_hidden.shape[1])])
