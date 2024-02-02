@@ -202,7 +202,12 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
     model_representations = []
 
     batch_size = 16
-    F = dataset.hidden_state_dataset.get_layer(model.config.base_model_layer)
+    # TODO this is a hack -- better to have the dataset explicitly represent what
+    # layers it retains after subsetting
+    if dataset.hidden_state_dataset.num_layers > 1:
+        F = dataset.hidden_state_dataset.get_layer(model.config.base_model_layer)
+    else:
+        F = dataset.hidden_state_dataset.get_layer(0)
     for batch_start in trange(0, dataset.hidden_state_dataset.num_frames, batch_size):
         batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, dataset.hidden_state_dataset.num_frames))
         batch = torch.stack([get_sequence(F, dataset.S[idx], idx, model.config.max_length)
