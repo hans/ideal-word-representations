@@ -2,6 +2,8 @@ from collections import defaultdict
 from beartype import beartype
 from dataclasses import dataclass
 from functools import cached_property
+import os
+import pickle
 from typing import TypeAlias, Callable, Any, Hashable
 
 import datasets
@@ -148,7 +150,7 @@ def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
                                    model: transformers.PreTrainedModel,
                                    layer: int,
-                                   classer: str,
+                                   equivalence_classer: str,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
     TIMIT-specific function to prepare an equivalence-classed frame dataset
@@ -157,7 +159,7 @@ def make_timit_equivalence_dataset(name: str,
     NB that equivalence classing is not specific to models and could be
     decoupled in principle.
     """
-    assert classer in equivalence_classers
+    assert equivalence_classer in equivalence_classers
 
     flat_idxs = []
     frames_by_item = {}
@@ -200,7 +202,7 @@ def make_timit_equivalence_dataset(name: str,
                     # Sample uniformly spaced frames within the span of the phoneme
                     ks = np.linspace(phone_start, phone_end, num_frames_per_phoneme).round().astype(int)
                 for k in ks:
-                    class_label = equivalence_classers[classer](word, j)
+                    class_label = equivalence_classers[equivalence_classer](word, j)
                     if class_label is not None:
                         frame_groups[class_label].append((idx, k))
 
@@ -220,7 +222,7 @@ def make_timit_equivalence_dataset(name: str,
 
     # Compute start frames.
     S = torch.zeros(len(flat_idxs), dtype=torch.long) - 1
-    start_reference = start_references[classer]
+    start_reference = start_references[equivalence_classer]
     if start_reference == "word":
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
@@ -280,3 +282,26 @@ def make_timit_equivalence_dataset(name: str,
                                     Q=Q,
                                     S=S,
                                     class_labels=class_labels)
+
+
+def load_or_make_timit_equivalence_dataset(
+    name: str,
+    dataset: datasets.Dataset,
+    model: transformers.PreTrainedModel,
+    layer: int,
+    equivalence_classer: str,
+    num_frames_per_phoneme=None,
+    force_recompute=False
+) -> SpeechEquivalenceDataset:
+    """
+    Load or compute a TIMIT equivalence dataset, and cache it to disk.
+    """
+    cache_path = f"data/timit_equivalence_{name}.pkl"
+    if os.path.exists(cache_path) and not force_recompute:
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+    else:
+        result = make_timit_equivalence_dataset(name, dataset, model, layer, equivalence_classer, num_frames_per_phoneme)
+        with open(cache_path, "wb") as f:
+            pickle.dump(result, f)
+        return result

@@ -1,4 +1,4 @@
 _target_: src.utils.timit.load_or_prepare_timit_corpus
 
-processed_data_dir: data/timit_phoneme
+processed_data_dir: data/timit_phoneme_dev
 raw_data_dir: data/timit_raw

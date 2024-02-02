@@ -1,8 +1,7 @@
 defaults:
   - _self_
   - dataset: timit_phonemes
-  - semantic_targets: type_random
-  - collator: dual_phoneme
+  - equivalence: word_prefix
   - model: w2v2_drop6_nornn
 
   - override hydra/job_logging: colorlog
@@ -30,14 +29,14 @@ training_args:
   evaluation_strategy: steps
   num_train_epochs: 50
   gradient_accumulation_steps: 2
-  save_steps: 50
-  eval_steps: 50
-  logging_steps: 2
+  save_steps: 100
+  eval_steps: 100
+  logging_steps: 10
   learning_rate: 1e-2
   save_total_limit: 5
+  greater_is_better: false
   remove_unused_columns: false
   load_best_model_at_end: true
-  label_names: ["target_mask", "classifier_labels", "regressor_targets"]
   disable_tqdm: true
 
 trainer:

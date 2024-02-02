@@ -1,0 +1,7 @@
+_target_: src.datasets.speech_equivalence.load_or_make_timit_equivalence_dataset
+
+name: word_prefix-6-2
+
+equivalence_classer: phoneme_within_word_prefix
+layer: 6
+num_frames_per_phoneme: 2
