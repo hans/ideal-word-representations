@@ -17,6 +17,7 @@ equivalence_classers: dict[str, EquivalenceClasser] = {
     "phoneme_within_word_prefix": 
         lambda word, i: tuple(phone["phone"] for phone in word[:i+1]),
     "phoneme": lambda word, i: word[i]["phone"],
+    "next_phoneme": lambda word, i: word[i+1]["phone"] if i + 1 < len(word) else None,
 
     "phoneme_fixed": lambda word, i: word[i]["phone"],
 }
@@ -26,6 +27,7 @@ equivalence_classers: dict[str, EquivalenceClasser] = {
 start_references = {
     "phoneme_within_word_prefix": "word",
     "phoneme": "word",
+    "next_phoneme": "word",
 
     "phoneme_fixed": "fixed",
 }
@@ -192,7 +194,8 @@ def make_timit_equivalence_dataset(name: str,
                     ks = np.linspace(phone_start, phone_end, num_frames_per_phoneme).round().astype(int)
                 for k in ks:
                     class_label = equivalence_classers[classer](word, j)
-                    frame_groups[class_label].append((idx, k))
+                    if class_label is not None:
+                        frame_groups[class_label].append((idx, k))
 
     dataset.map(process_item, with_indices=True, desc="Extracting hidden states")
 
