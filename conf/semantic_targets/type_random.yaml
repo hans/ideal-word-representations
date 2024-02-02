@@ -1,4 +1,0 @@
-_target_: src.models.semantic.RandomSemanticModel
-
-embedding_size: 32
-normalize: True

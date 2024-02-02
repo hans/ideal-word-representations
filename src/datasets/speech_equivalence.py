@@ -228,6 +228,8 @@ def make_timit_equivalence_dataset(name: str,
             compression_ratio = num_frames / len(item["input_values"])
 
             for word in item["word_phonemic_detail"]:
+                if len(word) == 0:
+                    continue
                 word_str = tuple(phone["phone"] for phone in word)
                 word_start = int(word[0]["start"] * compression_ratio)
                 word_end = int(word[-1]["stop"] * compression_ratio)
