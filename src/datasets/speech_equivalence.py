@@ -1,11 +1,14 @@
 from collections import defaultdict
+from beartype import beartype
 from dataclasses import dataclass
 from functools import cached_property
 from typing import TypeAlias, Callable, Any, Hashable
 
 import datasets
+from jaxtyping import Float, Int64
 import numpy as np
 import torch
+from torch import Tensor as T
 import transformers
 
 
@@ -35,12 +38,13 @@ start_references = {
 }
 
 
+@beartype
 @dataclass
 class SpeechHiddenStateDataset:
     model_name: str
 
     # num_frames * num_layers * hidden_size
-    states: torch.Tensor
+    states: Float[T, "num_frames num_layers hidden_size"]
 
     # mapping from flattened frame index to (item index, frame index)
     flat_idxs: list[tuple[int, int]]
@@ -80,6 +84,7 @@ class SpeechHiddenStateDataset:
         return {item: (start, end) for item, start, end in zip(item_idxs, flat_idx_starts, flat_idx_ends)}
 
 
+@beartype
 @dataclass
 class SpeechEquivalenceDataset:
     """
@@ -97,8 +102,8 @@ class SpeechEquivalenceDataset:
     name: str
 
     hidden_state_dataset: SpeechHiddenStateDataset
-    Q: torch.Tensor
-    S: torch.Tensor
+    Q: Int64[T, "num_frames"]
+    S: Int64[T, "num_frames"]
 
     class_labels: list[Any]
     """
