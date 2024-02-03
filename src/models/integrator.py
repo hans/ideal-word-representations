@@ -103,11 +103,19 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                 embeddings=embeddings,
             )
 
-    def compute_embeddings(self, example, example_length):
+    def compute_embeddings(self, example, example_length, return_all_states=False):
         embeddings = self.rnn(example, example_length)
-        # Gather final embedding of each sequence
-        embeddings = torch.gather(embeddings, 1, (example_length - 1).reshape(-1, 1, 1).expand(-1, 1, embeddings.shape[-1])).squeeze(1)
-        return embeddings
+
+        if return_all_states:
+            # Mask states beyond the length of each example.
+            max_batch_length = example_length.max().item()
+            mask = torch.arange(max_batch_length).expand(example.shape[0], -1).to(example.device) >= example_length.unsqueeze(1)
+            embeddings[mask] = 0
+            return embeddings
+        else:
+            # Gather final embedding of each sequence
+            embeddings = torch.gather(embeddings, 1, (example_length - 1).reshape(-1, 1, 1).expand(-1, 1, embeddings.shape[-1])).squeeze(1)
+            return embeddings
         
     def compute_batch_embeddings(self, example, example_length, pos, pos_length, neg, neg_length):
         return self.compute_embeddings(example, example_length), \
