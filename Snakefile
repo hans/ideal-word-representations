@@ -36,8 +36,7 @@ rule prepare_audioset:
 
 rule run:
     output:
-        full_trace = directory("outputs/models/{model_name}/{equivalence_classer}"),
-        test_result = directory("outputs/models/{model_name}/{equivalence_classer}/test_result")
+        full_trace = directory("outputs/models/{model_name}/{equivalence_classer}")
 
     shell:
         """
@@ -51,16 +50,15 @@ rule run:
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",
-        model_result = "outputs/models/{model_name}/test_result"
+        model_dir = "outputs/models/{model_name}/{equivalence_classer}"
     output:
-        outdir = directory("outputs/notebooks/{model_name}/{notebook}"),
-        notebook = "outputs/notebooks/{model_name}/{notebook}/{notebook}.ipynb"
+        outdir = directory("outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}"),
+        notebook = "outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}/{notebook}.ipynb"
 
     shell:
         """
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p model_name {wildcards.model_name} \
-            -p test_dataset_path {input.model_result} \
+            -p model_dir {input.model_dir} \
             -p output_dir {output.outdir}
         """
