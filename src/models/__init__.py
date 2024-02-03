@@ -1,4 +1,6 @@
+from pathlib import Path
 
+from transformers.trainer_callback import TrainerState
 
 
 SOS_TOKEN = "<SOS>"
@@ -45,3 +47,15 @@ class Vocabulary(object):
             "sos_token_id": self.sos_token_id,
             "eos_token_id": self.eos_token_id,
         }
+    
+
+def get_best_checkpoint(trainer_dir) -> str:
+    all_checkpoints = list(Path(trainer_dir).glob("checkpoint-*"))
+    if not all_checkpoints:
+        raise ValueError(f"No checkpoints found in {trainer_dir}")
+    
+    last_checkpoint = sorted(all_checkpoints, key=lambda p: int(p.stem.split("-")[-1]))[-1]
+    state = TrainerState.load_from_json(last_checkpoint / "trainer_state.json")
+    best_checkpoint = state.best_model_checkpoint
+
+    return best_checkpoint
