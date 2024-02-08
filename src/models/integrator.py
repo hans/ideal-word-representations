@@ -36,16 +36,19 @@ class ContrastiveEmbeddingObjective(nn.Module):
         super(ContrastiveEmbeddingObjective, self).__init__()
         self.tau = tau
 
-    def forward(self, embeddings, pos_embeddings, neg_embeddings):
+    def forward(self, embeddings, pos_embeddings, neg_embeddings, reduction="mean"):
         pos_dist = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
         neg_dist = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
 
-        pos_loss = -torch.log(torch.exp(pos_dist / self.tau)).mean()
-        neg_loss = -torch.log(torch.exp(-neg_dist / self.tau)).mean()
+        pos_loss = -torch.log(torch.exp(pos_dist / self.tau))
+        neg_loss = -torch.log(torch.exp(-neg_dist / self.tau))
 
-        loss = pos_loss + neg_loss
-
-        return loss
+        if reduction == "mean":
+            return pos_loss.mean() + neg_loss.mean()
+        elif reduction is None or reduction == "none":
+            return pos_loss + neg_loss
+        else:
+            raise ValueError(f"Invalid reduction {reduction}")
 
 @dataclass
 class ContrastiveEmbeddingModelOutput(ModelOutput):
@@ -90,11 +93,11 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
-                return_loss=True, return_embeddings=False):
+                loss_reduction="mean", return_loss=True, return_embeddings=False):
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
         loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau)
-        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings)
+        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings, reduction=loss_reduction)
 
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
@@ -139,9 +142,13 @@ def get_sequence(F, start_index, end_index, max_length):
 
 
 def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
+                    num_examples: Optional[int] = None,
                     layer: Optional[int] = None) -> Dataset:
     """
     Prepare a negative-sampling dataset for contrastive embedding learning.
+
+    If `num_examples` is specified, dataset will be subsampled. Sampling will
+    be fully random, without stratification by equivalence class.
     """
     if layer is None and dataset.hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
@@ -154,6 +161,10 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
     lengths[lengths == 0] = 1
 
     non_null_frames = (dataset.Q != -1).nonzero(as_tuple=True)[0]
+
+    if num_examples is not None:
+        non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
+
     for i in tqdm(non_null_frames):
         if lengths[i] == -1:
             continue
@@ -174,23 +185,34 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
             pos_seq = get_sequence(F, dataset.S[pos_idx], pos_idx, max_length)
             neg_seq = get_sequence(F, dataset.S[neg_idx], neg_idx, max_length)
 
-            ret.append((example_seq, lengths[i],
-                        pos_seq, lengths[pos_idx],
-                        neg_seq, lengths[neg_idx]))
+            ret.append((example_seq, i, dataset.Q[i], lengths[i],
+                        pos_seq, pos_idx, dataset.Q[pos_idx], lengths[pos_idx],
+                        neg_seq, neg_idx, dataset.Q[neg_idx], lengths[neg_idx]))
 
     ret = Dataset.from_dict({
         "example": [x[0] for x in ret],
-        "example_length": [x[1] for x in ret],
-        "pos": [x[2] for x in ret],
-        "pos_length": [x[3] for x in ret],
-        "neg": [x[4] for x in ret],
-        "neg_length": [x[5] for x in ret],
+        "example_idx": [x[1] for x in ret],
+        "example_class": [x[2] for x in ret],
+        "example_length": [x[3] for x in ret],
+
+        "pos": [x[4] for x in ret],
+        "pos_idx": [x[5] for x in ret],
+        "pos_class": [x[6] for x in ret],
+        "pos_length": [x[7] for x in ret],
+
+        "neg": [x[8] for x in ret],
+        "neg_idx": [x[9] for x in ret],
+        "neg_class": [x[10] for x in ret],
+        "neg_length": [x[11] for x in ret],
     }).with_format("torch")
 
     # Sanity checks
     assert (ret["example_length"] > 0).all()
     assert (ret["pos_length"] > 0).all()
     assert (ret["neg_length"] > 0).all()
+    assert (ret["example_class"] != -1).all()
+    assert (ret["pos_class"] != -1).all()
+    assert (ret["neg_class"] != -1).all()
 
     return ret
 
