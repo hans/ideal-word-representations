@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 import random
 from typing import Optional
 
@@ -229,6 +230,20 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
             model_representations.append(model.compute_embeddings(batch, lengths))
 
     return torch.cat(model_representations, dim=0)
+
+
+def load_or_compute_embeddings(model, equiv_dataset, model_dir, equiv_dataset_path,
+                               embedding_cache_dir="out/embedding_cache", **kwargs):
+    embedding_cache_path = Path(embedding_cache_dir) / f"{model_dir.replace('/', '-')}-{equiv_dataset_path.replace('/', '-')}.npy"
+    
+    if Path(embedding_cache_path).exists():
+        model_representations = np.load(embedding_cache_path)
+    else:
+        model_representations = compute_embeddings(model, equiv_dataset,
+                                                   **kwargs)
+        model_representations = model_representations.numpy()
+        np.save(embedding_cache_path, model_representations)
+    return model_representations
 
 
 # def prepare_batches(F, Q, S, max_length, batch_size=32):
