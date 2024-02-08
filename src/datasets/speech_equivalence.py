@@ -24,6 +24,7 @@ equivalence_classers: dict[str, EquivalenceClasser] = {
     "phoneme": lambda word, i: word[i]["phone"],
     "next_phoneme": lambda word, i: word[i+1]["phone"] if i + 1 < len(word) else None,
     "phoneme_within_word_suffix": lambda word, i: tuple(phone["phone"] for phone in word[i:]),
+    "word_suffix": lambda word, i: tuple(phone["phone"] for phone in word[i + 1:]),
 
     "phoneme_fixed": lambda word, i: word[i]["phone"],
 }
