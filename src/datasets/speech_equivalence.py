@@ -36,6 +36,7 @@ start_references = {
     "phoneme": "word",
     "next_phoneme": "word",
     "phoneme_within_word_suffix": "word",
+    "word_suffix": "word",
 
     "phoneme_fixed": "fixed",
 }
