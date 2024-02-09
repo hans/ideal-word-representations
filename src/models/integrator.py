@@ -93,7 +93,8 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
-                loss_reduction="mean", return_loss=True, return_embeddings=False):
+                loss_reduction="mean", return_loss=True, return_embeddings=False,
+                **kwargs):
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
         loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau)
