@@ -27,6 +27,8 @@ equivalence_classers: dict[str, EquivalenceClasser] = {
     "word_suffix": lambda word, i: tuple(phone["phone"] for phone in word[i + 1:]),
 
     "phoneme_fixed": lambda word, i: word[i]["phone"],
+
+    "syllable": lambda word, i: tuple(word[i]["syllable_phones"]),
 }
 
 # Each equivalence classer also defines a function to compute the start of the
@@ -39,6 +41,8 @@ start_references = {
     "word_suffix": "word",
 
     "phoneme_fixed": "fixed",
+
+    "syllable": "word",
 }
 
 
