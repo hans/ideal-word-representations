@@ -323,11 +323,18 @@ def compute_embedding_loss(embeddings, pos_embeddings, neg_embeddings, tau=0.1):
     return pos_loss.mean() + neg_loss.mean()
 
 
-def compute_embedding_alignment(embeddings, pos_embeddings):
+def compute_embedding_alignment(embeddings, pos_embeddings, metric="euclidean"):
     """
     Compute average Euclidean distance between embeddings and their positive anchors.
     """
-    return np.linalg.norm(embeddings - pos_embeddings, ord=2, axis=1).mean()
+    if metric == "cosine":
+        embeddings /= np.linalg.norm(embeddings, ord=2, axis=1, keepdims=True)
+        pos_embeddings /= np.linalg.norm(pos_embeddings, ord=2, axis=1, keepdims=True)
+        return 1 - (embeddings * pos_embeddings).sum(axis=1).mean()
+    elif metric == "euclidean":
+        return np.linalg.norm(embeddings - pos_embeddings, ord=2, axis=1).mean()
+    else:
+        raise ValueError(f"Unknown metric {metric}")
 
 
 def compute_embedding_uniformity(embeddings: np.ndarray, metric="euclidean"):
@@ -349,6 +356,7 @@ def compute_metrics(p: EvalPrediction):
     return {
         "eval_loss": compute_embedding_loss(embeddings, hard_positive_embeddings, hard_negative_embeddings),
         "eval_embedding_norm": np.linalg.norm(embeddings, ord=2, axis=1).mean(),
-        "eval_embedding_alignment": compute_embedding_alignment(embeddings, hard_positive_embeddings),
+        "eval_embedding_alignment": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="euclidean"),
+        "eval_embedding_alignment_cosine": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="cosine"),
         "eval_embedding_uniformity": compute_embedding_uniformity(embeddings),
     }
