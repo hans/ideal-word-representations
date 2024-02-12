@@ -150,6 +150,14 @@ def add_syllabic_detail(item):
                 "stop": word[phoneme_idx + len(syllable_phones) - 1]["stop"],
             }
 
+            # Add cross-reference data in word_phonemic_detail
+            for j, ph in enumerate(syllable_phones):
+                word[phoneme_idx + j]["syllable_idx"] = syllable_idx
+                word[phoneme_idx + j]["syllable_phones"] = tuple(syllable_phones)
+                word[phoneme_idx + j]["stress"] = stress
+                word[phoneme_idx + j]["syllable_start"] = syllable_dict["start"]
+                word[phoneme_idx + j]["syllable_stop"] = syllable_dict["stop"]
+
             syllable_dicts.append(syllable_dict)
             phoneme_idx += len(syllable_phones)
             syllable_idx += 1
