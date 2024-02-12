@@ -1,3 +1,4 @@
+import itertools
 from pathlib import Path
 import re
 
@@ -8,6 +9,7 @@ import soundfile as sf
 import torch
 
 from src.models.transformer import TilingWordFeatureExtractor2
+from src.utils import syllabifier
 
 
 import numpy as np
@@ -119,6 +121,45 @@ def group_phonetic_detail(item, drop_phones=None, key="phonetic_detail"):
     return item
 
 
+def add_syllabic_detail(item):
+    word_syllables = []
+    for word in item["word_phonemic_detail"]:
+        phones = [ph["phone"] for ph in word if ph["phone"] != "[SIL]"]
+        if not phones:
+            continue
+
+        syllables = syllabifier.syllabify(syllabifier.English, phones)
+
+        assert phones == list(itertools.chain.from_iterable(
+            [tuple(onset) + tuple(nucleus) + tuple(coda) for stress, onset, nucleus, coda in syllables]))
+        # print(syllables)
+        # word["syllables"] = syllables
+
+        phoneme_idx, syllable_idx = 0, 0
+        syllable_dicts = []
+        for stress, onset, nucleus, coda in syllables:
+            syllable_phones = tuple(onset + nucleus + coda)
+            syllable_dict = {
+                "phones": syllable_phones,
+                "idx": syllable_idx,
+                "phoneme_start_idx": phoneme_idx,
+                "phoneme_end_idx": phoneme_idx + len(syllable_phones), # exclusive
+                "stress": stress,
+
+                "start": word[phoneme_idx]["start"],
+                "stop": word[phoneme_idx + len(syllable_phones) - 1]["stop"],
+            }
+
+            syllable_dicts.append(syllable_dict)
+            phoneme_idx += len(syllable_phones)
+            syllable_idx += 1
+
+        word_syllables.append(syllable_dicts)
+    
+    item["word_syllable_detail"] = word_syllables
+    return item
+
+
 def prepare_timit_corpus(data_dir,
                          processor: transformers.Wav2Vec2Processor,
                          add_phoneme_targets=False,
@@ -145,6 +186,9 @@ def prepare_timit_corpus(data_dir,
                         fn_kwargs=dict(drop_phones=drop_phones))
     corpus = corpus.map(group_phonetic_detail, batched=False,
                         fn_kwargs=dict(key="phonemic_detail"))
+    
+    # Add syllabic detail
+    corpus = corpus.map(add_syllabic_detail, batched=False)
     
     def prepare_audio(batch):
         audio = batch["audio"]
