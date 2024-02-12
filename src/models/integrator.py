@@ -34,11 +34,14 @@ class RNNModel(nn.Module):
     
 
 class ContrastiveEmbeddingObjective(nn.Module):
-    def __init__(self, tau=0.1):
+    def __init__(self, tau=0.1, batch_soft_negatives=False):
         super(ContrastiveEmbeddingObjective, self).__init__()
         self.tau = tau
+        self.batch_soft_negatives = batch_soft_negatives
 
-    def forward(self, embeddings, pos_embeddings, neg_embeddings, reduction="mean"):
+    def forward(self, embeddings, pos_embeddings, neg_embeddings,
+                reduction="mean",
+                embeddings_class=None):
         pos_dist = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
         neg_dist = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
 
@@ -46,11 +49,29 @@ class ContrastiveEmbeddingObjective(nn.Module):
         neg_loss = -torch.log(torch.exp(-neg_dist / self.tau))
 
         if reduction == "mean":
-            return pos_loss.mean() + neg_loss.mean()
-        elif reduction is None or reduction == "none":
-            return pos_loss + neg_loss
-        else:
-            raise ValueError(f"Invalid reduction {reduction}")
+            pos_loss = pos_loss.mean()
+            neg_loss = neg_loss.mean()
+
+        if self.batch_soft_negatives:
+            if embeddings_class is None:
+                raise ValueError("Must provide embeddings_class if using batch_soft_negatives")
+            if reduction != "mean":
+                raise ValueError("Must use mean reduction with batch_soft_negatives")
+
+            # Compute pairwise cosine similarity matrix
+            anchors = embeddings
+            soft_negatives = embeddings  # TODO could also include hard positives/negatives of other examples
+            pairwise_cosine_sim = F.cosine_similarity(anchors.unsqueeze(1), soft_negatives.unsqueeze(0), dim=2)
+
+            # Evaluate upper triangle
+            mask = torch.triu(embeddings_class.unsqueeze(1) != embeddings_class.unsqueeze(0), diagonal=1)
+            pairwise_cosine_sim = pairwise_cosine_sim[mask]
+
+            soft_neg_loss = -torch.log(torch.exp(-pairwise_cosine_sim / self.tau)).mean()
+            neg_loss += soft_neg_loss
+        
+        return pos_loss + neg_loss
+
 
 @dataclass
 class ContrastiveEmbeddingModelOutput(ModelOutput):
@@ -77,6 +98,12 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     output_dim: int = 4
     tau: float = 0.1
 
+    in_batch_soft_negatives: bool = True
+    """
+    If True, use all other examples in the batch as soft negatives unless they have
+    the same class. If False, only use the hard negative example.
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -99,12 +126,20 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
-                loss_reduction="mean", return_loss=True, return_embeddings=True,
+                loss_reduction="mean",
+                return_loss=True, return_embeddings=True,
+                in_batch_soft_negatives=None,
                 **kwargs):
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
-        loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau)
-        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings, reduction=loss_reduction)
+        
+        in_batch_soft_negatives = in_batch_soft_negatives if in_batch_soft_negatives is not None \
+            else self.config.in_batch_soft_negatives
+
+        loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau, batch_soft_negatives=in_batch_soft_negatives)
+        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings,
+                       reduction=loss_reduction,
+                       embeddings_class=kwargs.get("example_idx"))
 
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
