@@ -5,12 +5,14 @@ from typing import Optional
 
 from datasets import Dataset
 import numpy as np
+from scipy.spatial.distance import cdist, pdist
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import PreTrainedModel, PretrainedConfig
+from transformers import PreTrainedModel, PretrainedConfig, EvalPrediction
 from transformers.file_utils import ModelOutput
+from transformers.trainer_utils import speed_metrics
 from tqdm.auto import tqdm, trange
 
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
@@ -53,7 +55,10 @@ class ContrastiveEmbeddingObjective(nn.Module):
 @dataclass
 class ContrastiveEmbeddingModelOutput(ModelOutput):
     loss: torch.FloatTensor = None
+
     embeddings: torch.FloatTensor = None
+    embeddings_hard_positive: torch.FloatTensor = None
+    embeddings_hard_negative: torch.FloatTensor = None
 
 
 @dataclass
@@ -82,6 +87,7 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
 
 class ContrastiveEmbeddingModel(PreTrainedModel):
     config_class = ContrastiveEmbeddingModelConfig
+    main_input_name = "example"
 
     def __init__(self, config):
         super().__init__(config)
@@ -93,7 +99,7 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
-                loss_reduction="mean", return_loss=True, return_embeddings=False,
+                loss_reduction="mean", return_loss=True, return_embeddings=True,
                 **kwargs):
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
@@ -103,9 +109,12 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
         else:
+            # TODO return hard negative/positive embeddings
             return ContrastiveEmbeddingModelOutput(
                 loss=loss,
                 embeddings=embeddings,
+                embeddings_hard_positive=pos_embeddings,
+                embeddings_hard_negative=neg_embeddings
             )
 
     def compute_embeddings(self, example, example_length, return_all_states=False):
@@ -269,102 +278,42 @@ def load_or_compute_embeddings(model, equiv_dataset, model_dir, equiv_dataset_pa
     return model_representations
 
 
-# def prepare_batches(F, Q, S, max_length, batch_size=32):
-#     dataset = []
-#     assert F.shape[0] == Q.shape[0] == S.shape[0]
-#     n_F = F.size(0)
+def compute_embedding_loss(embeddings, pos_embeddings, neg_embeddings, tau=0.1):
+    pos_dist = cdist(embeddings, pos_embeddings, metric="cosine")
+    neg_dist = cdist(embeddings, neg_embeddings, metric="cosine")
 
-#     lengths = torch.arange(n_F) - S
-#     lengths = torch.minimum(lengths, torch.tensor(max_length))
-#     # TODO this is just a hack
-#     lengths[lengths == 0] = 1
+    pos_loss = -np.log(np.exp(pos_dist / tau))
+    neg_loss = -np.log(np.exp(-neg_dist / tau))
 
-#     for i in range(n_F):
-#         pos_indices = (Q == Q[i]).nonzero(as_tuple=True)[0]
-#         neg_indices = (Q != Q[i]).nonzero(as_tuple=True)[0]
-
-#         if len(pos_indices) > 1 and len(neg_indices) > 0:
-#             pos_indices = pos_indices[pos_indices != i]
-#             pos_idx = random.choice(pos_indices)
-#             neg_idx = random.choice(neg_indices)
-
-#             # Extract sequences
-#             example_seq = get_sequence(F, S[i], i, max_length)
-#             pos_seq = get_sequence(F, S[pos_idx], pos_idx, max_length)
-#             neg_seq = get_sequence(F, S[neg_idx], neg_idx, max_length)
-
-#             dataset.append((example_seq, lengths[i],
-#                             pos_seq, lengths[pos_idx],
-#                             neg_seq, lengths[neg_idx]))
-
-#     return DataLoader(TensorDataset(
-#         # example frames and lengths
-#         torch.stack([x[0] for x in dataset]), 
-#         torch.stack([x[1] for x in dataset]), 
-
-#         # positive frames and lengths
-#         torch.stack([x[2] for x in dataset]),
-#         torch.stack([x[3] for x in dataset]),
-
-#         # negative frames and lengths
-#         torch.stack([x[4] for x in dataset]),
-#         torch.stack([x[5] for x in dataset])),
-#         batch_size=batch_size, shuffle=True)
+    return pos_loss.mean() + neg_loss.mean()
 
 
-def compute_batched_rnn_loss(model, data_loader):
-    total_loss = 0
-    total_batches = 0
-
-    for batch in data_loader:
-        loss = model(batch)
-        total_loss += loss.item()
-        total_batches += 1
-
-    return total_loss / total_batches
+def compute_embedding_alignment(embeddings, pos_embeddings):
+    """
+    Compute average Euclidean distance between embeddings and their positive anchors.
+    """
+    return np.linalg.norm(embeddings - pos_embeddings, ord=2, axis=1).mean()
 
 
-# # Example usage
-# n_F, d = 100, 4  # Example dimensions
-# F = torch.randn(n_F, d) * 3  # Random frame features
-# Q = torch.randint(0, 10, (n_F,))  # Random frame matches
-# S = torch.maximum(torch.tensor(0), torch.arange(n_F) - torch.randint(1, 10, (n_F,)))  # Random span indices
-# max_length = 20  # Maximum sequence length for RNN
+def compute_embedding_uniformity(embeddings: np.ndarray, metric="euclidean"):
+    """
+    Compute uniformity a la Wang & Isola (2020)
+    """
+    distances = pdist(embeddings, metric=metric)
+    return distances.mean()
 
-# # rnn_model = RNNModel(input_dim=d, hidden_dim=256, output_dim=d)
-# model = ContrastiveEmbeddingModel(input_dim=d, hidden_dim=256, output_dim=d, tau=0.1)
-# # data_loader = prepare_batches(F, Q, S, max_length, batch_size=32)
-# # loss = compute_batched_rnn_loss(model, data_loader)
-# # print(loss)
 
-# # Build a test batch
-# sample_idx, pos_sample_idx, neg_sample_idx = 37, 23, 85
-# sample_length, pos_sample_length, neg_sample_length = 10, 8, 12
-# example_batch = get_sequence(F, S[sample_idx], sample_idx, max_length).unsqueeze(0)
-# pos_sample_batch = get_sequence(F, S[pos_sample_idx], pos_sample_idx, max_length).unsqueeze(0)
-# neg_sample_batch = get_sequence(F, S[neg_sample_idx], neg_sample_idx, max_length).unsqueeze(0)
-# example_lengths = torch.tensor([sample_length])
-# pos_sample_lengths = torch.tensor([pos_sample_length])
-# neg_sample_lengths = torch.tensor([neg_sample_length])
-# with torch.no_grad():
-#     embeddings, pos_embeddings, neg_embeddings = model.compute_batch_embeddings(example_batch, example_lengths, pos_sample_batch, pos_sample_lengths, neg_sample_batch, neg_sample_lengths)
-# # Manually compute embeddings
-# def compute_embedding_single(model, x, length):
-#     return model.rnn.fc(model.rnn.rnn(x[:, :length, :])[0][:, -1, :])
-# with torch.no_grad():
-#     embeddings_manual = compute_embedding_single(model, example_batch, example_lengths)
-#     pos_embeddings_manual = compute_embedding_single(model, pos_sample_batch, pos_sample_lengths)
-#     neg_embeddings_manual = compute_embedding_single(model, neg_sample_batch, neg_sample_lengths)
+def compute_metrics(p: EvalPrediction):
+    assert len(p.predictions) == 3
+    embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions
 
-#     # Check that the embeddings are the same
-#     print(embeddings)
-#     print(embeddings_manual)
-#     print("//")
-#     print(pos_embeddings)
-#     print(pos_embeddings_manual)
-#     print("//")
-#     print(neg_embeddings)
-#     print(neg_embeddings_manual)
-#     torch.testing.assert_close(embeddings, embeddings_manual)
-#     torch.testing.assert_close(pos_embeddings, pos_embeddings_manual)
-#     torch.testing.assert_close(neg_embeddings, neg_embeddings_manual)
+    assert isinstance(p.label_ids, np.ndarray)
+    example_classes = p.label_ids
+    assert embeddings.shape[0] == example_classes.shape[0]
+
+    return {
+        "eval_loss": compute_embedding_loss(embeddings, hard_positive_embeddings, hard_negative_embeddings),
+        "eval_embedding_norm": np.linalg.norm(embeddings, ord=2, axis=1).mean(),
+        "eval_embedding_alignment": compute_embedding_alignment(embeddings, hard_positive_embeddings),
+        "eval_embedding_uniformity": compute_embedding_uniformity(embeddings),
+    }
