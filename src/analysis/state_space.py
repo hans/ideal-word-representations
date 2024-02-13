@@ -64,6 +64,7 @@ def prepare_word_trajectory_spec(
 def prepare_state_trajectory(
         embeddings: np.ndarray,
         spec: StateSpaceAnalysisSpec,
+        pad="last",
 ) -> list[np.ndarray]:
     """
     Prepare the state trajectory for the given dataset and model embeddings.
@@ -78,9 +79,16 @@ def prepare_state_trajectory(
         for j, (start, end) in enumerate(frame_spec):
             trajectory_frames[j, :end - start + 1] = embeddings[start:end + 1]
 
-            # Fill on right
+            # Pad on right
+            if pad == "last":
+                pad_value = embeddings[end]
+            elif isinstance(pad, str):
+                raise ValueError(f"Invalid pad value {pad}; use `last` or a float")
+            else:
+                pad_value = pad
+
             if end - start + 1 < max_num_frames:
-                trajectory_frames[j, end - start + 1:] = embeddings[end]
+                trajectory_frames[j, end - start + 1:] = pad_value
 
         ret.append(trajectory_frames)
 
