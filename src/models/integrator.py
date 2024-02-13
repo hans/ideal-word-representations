@@ -68,6 +68,10 @@ class ContrastiveEmbeddingObjective(nn.Module):
             pairwise_cosine_sim = pairwise_cosine_sim[mask]
 
             soft_neg_loss = -torch.log(torch.exp(-pairwise_cosine_sim / self.tau)).mean()
+            # Guard for NaN (will happen if there are no soft negatives)
+            if torch.isnan(soft_neg_loss):
+                soft_neg_loss = torch.tensor(0.0, device=soft_neg_loss.device)
+
             neg_loss += soft_neg_loss
         
         return pos_loss + neg_loss
