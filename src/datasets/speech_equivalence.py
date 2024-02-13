@@ -28,7 +28,7 @@ equivalence_classers: dict[str, EquivalenceClasser] = {
 
     "phoneme_fixed": lambda word, i: word[i]["phone"],
 
-    "syllable": lambda word, i: tuple(word[i]["syllable_phones"]),
+    "syllable": lambda word, i: tuple(word[i]["syllable_phones"]) if word[i]["syllable_phones"] is not None else None,
 }
 
 # Each equivalence classer also defines a function to compute the start of the
