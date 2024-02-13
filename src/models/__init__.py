@@ -54,7 +54,7 @@ def get_best_checkpoint(trainer_dir) -> str:
     if not all_checkpoints:
         raise ValueError(f"No checkpoints found in {trainer_dir}")
     
-    last_checkpoint = sorted(all_checkpoints, key=lambda p: int(p.stem.split("-")[-1]))[-1]
+    last_checkpoint = sorted(all_checkpoints, key=lambda p: int(p.name.split("-")[-1]))[-1]
     state = TrainerState.load_from_json(last_checkpoint / "trainer_state.json")
     best_checkpoint = state.best_model_checkpoint
 
