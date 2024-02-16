@@ -64,19 +64,29 @@ def prepare_word_trajectory_spec(
 def prepare_state_trajectory(
         embeddings: np.ndarray,
         spec: StateSpaceAnalysisSpec,
+        expand_window: Optional[tuple[int, int]] = None,
         pad="last",
 ) -> list[np.ndarray]:
     """
     Prepare the state trajectory for the given dataset and model embeddings.
+
+    If `expand_window` is not None, add `expand_window[0]` frames to the left
+    of each trajectory and `expand_window[1]` frames to the right.
     """
     max_num_frames = max(max(end - start + 1 for start, end in trajectory_spec)
                          for trajectory_spec in spec.target_frame_spans)
+    if expand_window is not None:
+        max_num_frames += expand_window[0] + expand_window[1]
     ret = []
 
     for i, frame_spec in enumerate(spec.target_frame_spans):
         num_instances = len(frame_spec)
         trajectory_frames = np.zeros((num_instances, max_num_frames, embeddings.shape[1]))
         for j, (start, end) in enumerate(frame_spec):
+            if expand_window is not None:
+                start = max(0, start - expand_window[0])
+                end = min(spec.total_num_frames - 1, end + expand_window[1])
+
             trajectory_frames[j, :end - start + 1] = embeddings[start:end + 1]
 
             # Pad on right
