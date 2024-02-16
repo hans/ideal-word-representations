@@ -19,9 +19,13 @@ from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEqui
 
 
 class RNNModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, num_layers, input_dim, hidden_dim, output_dim, type="lstm"):
         super(RNNModel, self).__init__()
-        self.rnn = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, batch_first=True)
+        if num_layers == 0:
+            self.rnn = nn.Identity()
+        else:
+            fn = nn.LSTM if type == "lstm" else nn.RNN
+            self.rnn = fn(num_layers=num_layers, input_size=input_dim, hidden_size=hidden_dim, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, lengths):
@@ -98,6 +102,7 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     # NN config
     max_length: int = 20
     input_dim: int = 4
+    num_layers: int = 1
     hidden_dim: int = 256
     output_dim: int = 4
     tau: float = 0.1
@@ -122,7 +127,8 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.rnn = RNNModel(config.input_dim,
+        self.rnn = RNNModel(config.num_layers,
+                            config.input_dim,
                             config.hidden_dim,
                             config.output_dim)
         
@@ -148,7 +154,6 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
         else:
-            # TODO return hard negative/positive embeddings
             return ContrastiveEmbeddingModelOutput(
                 loss=loss,
                 embeddings=embeddings,
