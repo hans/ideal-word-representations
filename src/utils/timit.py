@@ -172,7 +172,7 @@ def add_syllabic_detail(item):
 def prepare_timit_corpus(data_dir,
                          processor: transformers.Wav2Vec2Processor,
                          add_phoneme_targets=False,
-                         drop_phones=("[SIL]", "pau", "epi")):
+                         drop_phones=("[SIL]",)):
     """
     Load and prepare TIMIT corpus for training.
     """
@@ -223,7 +223,7 @@ def prepare_timit_corpus(data_dir,
 def load_or_prepare_timit_corpus(processed_data_dir,
                                  raw_data_dir,
                                  processor: transformers.Wav2Vec2Processor,
-                                 drop_phones=None) -> DatasetDict:
+                                 drop_phones=("[SIL]",)) -> DatasetDict:
     """
     Load preprocessed TIMIT corpus if it exists, or compute and save to
     the preprocessed directory.
