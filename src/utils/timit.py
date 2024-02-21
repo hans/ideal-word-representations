@@ -172,7 +172,7 @@ def add_syllabic_detail(item):
 def prepare_timit_corpus(data_dir,
                          processor: transformers.Wav2Vec2Processor,
                          add_phoneme_targets=False,
-                         drop_phones=None):
+                         drop_phones=("[SIL]", "pau", "epi")):
     """
     Load and prepare TIMIT corpus for training.
     """
@@ -194,7 +194,8 @@ def prepare_timit_corpus(data_dir,
     corpus = corpus.map(group_phonetic_detail, batched=False,
                         fn_kwargs=dict(drop_phones=drop_phones))
     corpus = corpus.map(group_phonetic_detail, batched=False,
-                        fn_kwargs=dict(key="phonemic_detail"))
+                        fn_kwargs=dict(key="phonemic_detail",
+                                       drop_phones=drop_phones))
     
     # Add syllabic detail
     corpus = corpus.map(add_syllabic_detail, batched=False)
