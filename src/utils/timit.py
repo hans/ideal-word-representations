@@ -177,7 +177,10 @@ def prepare_timit_corpus(data_dir,
     Load and prepare TIMIT corpus for training.
     """
 
-    corpus = load_dataset("timit_asr", data_dir=data_dir)
+    if (Path(data_dir) / "dataset_dict.json").exists():
+        corpus = load_dataset(data_dir)
+    else:
+        corpus = load_dataset("timit_asr", data_dir=data_dir)
 
     phone_vocab = set(processor.tokenizer.get_vocab().keys())
     # Sanity check: all TIMIT mapped to CMU targets should be in the vocab
