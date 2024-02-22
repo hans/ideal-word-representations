@@ -125,48 +125,59 @@ def add_syllabic_detail(item):
     word_syllables = []
     for word in item["word_phonemic_detail"]:
         phones = [ph["phone"] for ph in word if ph["phone"] != "[SIL]"]
-        if not phones:
-            continue
+        if len(phones) > 0:
+            syllables = syllabifier.syllabify(syllabifier.English, phones)
 
-        syllables = syllabifier.syllabify(syllabifier.English, phones)
+            assert phones == list(itertools.chain.from_iterable(
+                [tuple(onset) + tuple(nucleus) + tuple(coda) for stress, onset, nucleus, coda in syllables]))
+            # print(syllables)
+            # word["syllables"] = syllables
 
-        assert phones == list(itertools.chain.from_iterable(
-            [tuple(onset) + tuple(nucleus) + tuple(coda) for stress, onset, nucleus, coda in syllables]))
-        # print(syllables)
-        # word["syllables"] = syllables
+            phoneme_idx, syllable_idx = 0, 0
+            syllable_dicts = []
+            for stress, onset, nucleus, coda in syllables:
+                syllable_phones = tuple(onset + nucleus + coda)
+                syllable_dict = {
+                    "phones": syllable_phones,
+                    "idx": syllable_idx,
+                    "phoneme_start_idx": phoneme_idx,
+                    "phoneme_end_idx": phoneme_idx + len(syllable_phones), # exclusive
+                    "stress": stress,
 
-        phoneme_idx, syllable_idx = 0, 0
-        syllable_dicts = []
-        for stress, onset, nucleus, coda in syllables:
-            syllable_phones = tuple(onset + nucleus + coda)
-            syllable_dict = {
-                "phones": syllable_phones,
-                "idx": syllable_idx,
-                "phoneme_start_idx": phoneme_idx,
-                "phoneme_end_idx": phoneme_idx + len(syllable_phones), # exclusive
-                "stress": stress,
+                    "start": word[phoneme_idx]["start"],
+                    "stop": word[phoneme_idx + len(syllable_phones) - 1]["stop"],
+                }
 
-                "start": word[phoneme_idx]["start"],
-                "stop": word[phoneme_idx + len(syllable_phones) - 1]["stop"],
-            }
+                # Add cross-reference data in word_phonemic_detail
+                for j, ph in enumerate(syllable_phones):
+                    word[phoneme_idx + j]["syllable_idx"] = syllable_idx
+                    word[phoneme_idx + j]["idx_in_syllable"] = j
+                    word[phoneme_idx + j]["syllable_phones"] = tuple(syllable_phones)
+                    word[phoneme_idx + j]["stress"] = stress
+                    word[phoneme_idx + j]["syllable_start"] = syllable_dict["start"]
+                    word[phoneme_idx + j]["syllable_stop"] = syllable_dict["stop"]
 
-            # Add cross-reference data in word_phonemic_detail
-            for j, ph in enumerate(syllable_phones):
-                word[phoneme_idx + j]["syllable_idx"] = syllable_idx
-                word[phoneme_idx + j]["idx_in_syllable"] = j
-                word[phoneme_idx + j]["syllable_phones"] = tuple(syllable_phones)
-                word[phoneme_idx + j]["stress"] = stress
-                word[phoneme_idx + j]["syllable_start"] = syllable_dict["start"]
-                word[phoneme_idx + j]["syllable_stop"] = syllable_dict["stop"]
-
-            syllable_dicts.append(syllable_dict)
-            phoneme_idx += len(syllable_phones)
-            syllable_idx += 1
+                syllable_dicts.append(syllable_dict)
+                phoneme_idx += len(syllable_phones)
+                syllable_idx += 1
+        else:
+            syllable_dicts = []
 
         word_syllables.append(syllable_dicts)
     
     item["word_syllable_detail"] = word_syllables
     return item
+
+
+def check_item(item):
+    grouped_phonemic_detail = item["word_phonemic_detail"]
+    grouped_syllable_detail = item["word_syllable_detail"]
+    assert len(grouped_phonemic_detail) == len(item["word_detail"]["utterance"])
+    assert len(grouped_syllable_detail) == len(item["word_detail"]["utterance"])
+
+    all_phonemes = [phon["phone"] for word in grouped_phonemic_detail for phon in word]
+    all_phonemes_syll = [phone for word in item["word_syllable_detail"] for syllable in word for phone in syllable["phones"]]
+    assert len(all_phonemes) == len(all_phonemes_syll)
 
 
 def prepare_timit_corpus(data_dir,
@@ -202,6 +213,9 @@ def prepare_timit_corpus(data_dir,
     
     # Add syllabic detail
     corpus = corpus.map(add_syllabic_detail, batched=False)
+
+    # Run sanity checks on updated annotations
+    corpus.map(check_item, batched=False)
     
     def prepare_audio(batch):
         audio = batch["audio"]
