@@ -66,8 +66,8 @@ def train(config: DictConfig):
                                     return_attention_mask=False)
     processor = transformers.Wav2Vec2Processor(
         feature_extractor=feature_extractor, tokenizer=tokenizer)
-    
-    base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref)
+
+    base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref).to(config.device)
 
     # Prepare basic speech dataset
     dataset = instantiate(config.dataset, processor=processor,

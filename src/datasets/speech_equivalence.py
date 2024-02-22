@@ -184,18 +184,18 @@ def make_timit_equivalence_dataset(name: str,
     # Extract and un-pad hidden representations from the model
     def extract_representations(batch_items, idxs):
         batch = collate_batch(batch_items)
-        
+
         with torch.no_grad():
             output = model(output_hidden_states=True,
-                           input_values=batch["input_values"],
-                           attention_mask=batch["attention_mask"])
-        
+                           input_values=batch["input_values"].to(model.device),
+                           attention_mask=batch["attention_mask"].to(model.device))
+
         input_lengths = batch["attention_mask"].sum(dim=1)
         frame_lengths = model._get_feat_extract_output_lengths(input_lengths)
-        
+
         # batch_size * sequence_length * hidden_size
         batch_hidden_states = output.hidden_states[layer].cpu()
-        
+
         for idx, num_frames_i, hidden_states_i in zip(idxs, frame_lengths, batch_hidden_states):
             flat_idx_offset = len(flat_idxs)
             flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
