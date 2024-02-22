@@ -172,6 +172,8 @@ def make_timit_equivalence_dataset(name: str,
     frame_states_list = []
     frame_groups = defaultdict(list)
 
+    # Extract frame representations from model and align with TIMIT annotations
+    # TODO batch
     def process_item(item, idx):
         with torch.no_grad():
             output = model(output_hidden_states=True,

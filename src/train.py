@@ -1,7 +1,7 @@
 import logging 
 from pathlib import Path
 
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
@@ -72,15 +72,18 @@ def train(config: DictConfig):
     # Prepare basic speech dataset
     dataset = instantiate(config.dataset, processor=processor,
                           _convert_="partial")
+    if isinstance(dataset, DatasetDict):
+        dataset = dataset["train"]
 
     # Prepare equivalence-classing dataset
     equiv_name = f"{config.model.base_model_ref}_{config.model.base_model_layer}-{config.equivalence.equivalence_classer}-{config.equivalence.num_frames_per_phoneme}"
     equiv_name = equiv_name.replace("/", "-")
-    equiv_dataset = load_or_make_timit_equivalence_dataset(
-        name=equiv_name, dataset=dataset, model=base_model,
-        layer=config.model.base_model_layer,
-        **config.equivalence
-    )
+    equiv_dataset = instantiate(
+        config.equivalence, _recursive_=False,
+        name=equiv_name,
+        dataset=dataset,
+        model=base_model,
+        layer=config.model.base_model_layer)
 
     # Prepare negative-sampling dataset
     dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
@@ -100,6 +103,7 @@ def train(config: DictConfig):
     
     # Don't directly use `instantiate` with `TrainingArguments` or `Trainer` because the
     # type validation stuff is craaaaazy.
+    # ^ can fix this with _recursive_ = False I think
     # We also have to use `to_object` to make sure the params are JSON-serializable
     
     training_args = transformers.TrainingArguments(
