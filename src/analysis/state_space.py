@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 from sklearn.decomposition import PCA
 import torch
 
@@ -27,8 +28,34 @@ class StateSpaceAnalysisSpec:
     # Tuples are start and end indices, inclusive.
     target_frame_spans: list[list[tuple[int, int]]]
 
+    # Optional representation of frame subdivisions at lower levels of representation.
+    # For example, a word-level state space trajectory may retain information here
+    # about phoneme-level subdivisions.
+    # 
+    # DataFrame with index levels (label, instance_idx, level)
+    # and columns (description, frame_idx, onset_frame_idx, offset_frame_idx).
+    # This refers to the frame span `target_frame_spans[labels.index(label)][instance_idx]`
+    cuts: Optional[pd.DataFrame] = None
+
     def __post_init__(self):
         assert len(self.target_frame_spans) == len(self.labels)
+
+        if self.cuts is not None:
+            assert set(self.cuts.index.names) == {"level", "label", "instance_idx"}
+            assert set(self.cuts.columns) >= {"description", "onset_frame_idx", "offset_frame_idx"}
+            assert set(self.cuts.index.get_level_values("label")) <= set(self.labels)
+
+            assert (self.cuts.onset_frame_idx < self.total_num_frames).all()
+            assert (self.cuts.offset_frame_idx < self.total_num_frames).all()
+
+            # Make sure onset and offset idxs are within the span of the instance
+            for (label, instance_idx), cuts_group in self.cuts.groupby(["label", "instance_idx"]):
+                label_idx = self.labels.index(label)
+                start, end = self.target_frame_spans[label_idx][instance_idx]
+
+                print(start, end, cuts_group)
+                assert (cuts_group.onset_frame_idx >= start).all()
+                assert (cuts_group.offset_frame_idx <= end).all()
 
     def is_compatible_with(self, dataset: SpeechEquivalenceDataset) -> bool:
         return self.total_num_frames == dataset.hidden_state_dataset.num_frames
