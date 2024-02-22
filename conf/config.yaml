@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - dataset: timit_phonemes
+  - dataset: timit_syllables
   - equivalence: word_prefix
   - model: w2v2_drop6_nornn
 
@@ -25,19 +25,23 @@ feature_extractor:
   sampling_rate: 16000
 
 training_args:
-  per_device_train_batch_size: 16
+  per_device_train_batch_size: 32
   evaluation_strategy: steps
-  num_train_epochs: 50
+  num_train_epochs: 2
   gradient_accumulation_steps: 2
   save_steps: 100
   eval_steps: 100
   logging_steps: 10
-  learning_rate: 1e-2
+  learning_rate: 1e-3
   save_total_limit: 5
+  logging_first_step: true
   greater_is_better: false
   remove_unused_columns: false
   load_best_model_at_end: true
   disable_tqdm: true
+  save_safetensors: false
+  label_names:
+    - example_idx
 
 trainer:
   callbacks:

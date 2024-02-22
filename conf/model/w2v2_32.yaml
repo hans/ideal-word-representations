@@ -1,3 +1,0 @@
-base_model: facebook/wav2vec2-base
-hidden_dim: 32
-output_dim: 32

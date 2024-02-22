@@ -66,20 +66,27 @@ def train(config: DictConfig):
     processor = transformers.Wav2Vec2Processor(
         feature_extractor=feature_extractor, tokenizer=tokenizer)
     
-    base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model)
+    base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref)
 
     # Prepare basic speech dataset
     dataset = instantiate(config.dataset, processor=processor)
-    # DEV
-    dataset = dataset.select(range(5))
 
     # Prepare equivalence-classing dataset
-    equiv_dataset = instantiate(config.equivalence, dataset=dataset, model=base_model)
+    equiv_name = f"{config.model.base_model_ref}_{config.model.base_model_layer}-{config.equivalence.equivalence_classer}-{config.equivalence.num_frames_per_phoneme}"
+    equiv_name = equiv_name.replace("/", "-")
+    equiv_dataset = instantiate(
+        config.equivalence,
+        name=equiv_name,
+        dataset=dataset,
+        model=base_model,
+        layer=config.model.base_model_layer)
 
     # Prepare negative-sampling dataset
+    dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
     neg_dataset, max_length = prepare_neg_dataset(equiv_dataset)
-    # TODO save?
     neg_dataset_split = neg_dataset.train_test_split(test_size=0.1, shuffle=True)
+    neg_dataset_split.save_to_disk(dataset_path)
+
     train_dataset = neg_dataset_split["train"]
     eval_dataset = neg_dataset_split["test"]
 
@@ -96,6 +103,7 @@ def train(config: DictConfig):
     
     training_args = transformers.TrainingArguments(
         output_dir=HydraConfig.get().runtime.output_dir,
+        logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
         **OmegaConf.to_object(config.training_args))
 
     callbacks = []
