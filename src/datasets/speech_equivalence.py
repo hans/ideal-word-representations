@@ -155,6 +155,7 @@ class SpeechEquivalenceDataset:
 def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
                                    model: transformers.PreTrainedModel,
+                                   processor: transformers.Wav2Vec2Processor,
                                    layer: int,
                                    equivalence_classer: str,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
@@ -172,24 +173,42 @@ def make_timit_equivalence_dataset(name: str,
     frame_states_list = []
     frame_groups = defaultdict(list)
 
-    # Extract frame representations from model and align with TIMIT annotations
-    # TODO batch
-    def process_item(item, idx):
+    def collate_batch(batch):
+        batch = processor.pad(
+            [{"input_values": values_i} for values_i in batch["input_values"]],
+            max_length=None,
+            return_tensors="pt",
+            return_attention_mask=True)
+        return batch
+
+    # Extract and un-pad hidden representations from the model
+    def extract_representations(batch_items, idxs):
+        batch = collate_batch(batch_items)
+        
         with torch.no_grad():
             output = model(output_hidden_states=True,
-                           input_values=torch.tensor(item["input_values"]).unsqueeze(0).to(model.device))
-            
-        # num_layers * sequence_length * hidden_size
-        batch_hidden = torch.stack(output.hidden_states).squeeze(1).cpu()
-        batch_hidden = batch_hidden[layer].unsqueeze(0)
+                           input_values=batch["input_values"],
+                           attention_mask=batch["attention_mask"])
+        
+        input_lengths = batch["attention_mask"].sum(dim=1)
+        frame_lengths = model._get_feat_extract_output_lengths(input_lengths)
+        
+        # batch_size * sequence_length * hidden_size
+        batch_hidden_states = output.hidden_states[layer].cpu()
+        
+        for idx, num_frames_i, hidden_states_i in zip(idxs, frame_lengths, batch_hidden_states):
+            flat_idx_offset = len(flat_idxs)
+            flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
+            frames_by_item[idx] = (flat_idx_offset, len(flat_idxs))
+            frame_states_list.append(hidden_states_i[:num_frames_i])
+    dataset.map(extract_representations, batched=True, batch_size=6, with_indices=True,
+                desc="Extracting hidden states")
 
-        flat_idx_offset = len(flat_idxs)
-        flat_idxs.extend([(idx, i) for i in range(batch_hidden.shape[1])])
-        frames_by_item[idx] = (flat_idx_offset, len(flat_idxs))
-        frame_states_list.append(batch_hidden)
-
+    # Align with TIMIT annotations
+    def process_item(item, idx):
         # Now align and store frame metadata
-        compression_ratio = batch_hidden.shape[1] / len(item["input_values"])
+        num_frames = frames_by_item[idx][1] - frames_by_item[idx][0]
+        compression_ratio = num_frames / len(item["input_values"])
         for word in item["word_phonemic_detail"]:
             if len(word) == 0:
                 continue
@@ -213,11 +232,11 @@ def make_timit_equivalence_dataset(name: str,
                     class_label = equivalence_classers[equivalence_classer](word, j)
                     if class_label is not None:
                         frame_groups[class_label].append((idx, k))
+    dataset.map(process_item, with_indices=True, desc="Aligning metadata")
 
-    dataset.map(process_item, with_indices=True, desc="Extracting hidden states")
-
-    frame_states = torch.cat(frame_states_list, dim=1)
-    frame_states = frame_states.transpose(0, 1).contiguous()
+    frame_states = torch.cat(frame_states_list, dim=0)
+    frame_states = frame_states.unsqueeze(1).contiguous()
+    # frame_states: total_num_frames * 1 * hidden_size
 
     # Now run equivalence classing.
     Q = torch.zeros(len(flat_idxs), dtype=torch.long) - 1
@@ -296,6 +315,7 @@ def load_or_make_timit_equivalence_dataset(
     name: str,
     dataset: datasets.Dataset,
     model: transformers.PreTrainedModel,
+    processor: transformers.Wav2Vec2Processor,
     layer: int,
     equivalence_classer: str,
     num_frames_per_phoneme=None,
@@ -309,7 +329,9 @@ def load_or_make_timit_equivalence_dataset(
         with open(cache_path, "rb") as f:
             return pickle.load(f)
     else:
-        result = make_timit_equivalence_dataset(name, dataset, model, layer, equivalence_classer, num_frames_per_phoneme)
+        result = make_timit_equivalence_dataset(
+            name, dataset, model, processor, layer,
+            equivalence_classer, num_frames_per_phoneme)
         with open(cache_path, "wb") as f:
             pickle.dump(result, f)
         return result

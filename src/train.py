@@ -83,6 +83,7 @@ def train(config: DictConfig):
         name=equiv_name,
         dataset=dataset,
         model=base_model,
+        processor=processor,
         layer=config.model.base_model_layer)
 
     # Prepare negative-sampling dataset
