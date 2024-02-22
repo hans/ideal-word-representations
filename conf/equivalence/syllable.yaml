@@ -1,4 +1,2 @@
-_target_: src.datasets.speech_equivalence.load_or_make_timit_equivalence_dataset
-
 equivalence_classer: syllable
 num_frames_per_phoneme: 1

@@ -10,8 +10,9 @@ from sklearn.metrics import roc_curve, roc_auc_score
 import torch
 import transformers
 
-from src.datasets.speech_equivalence import SpeechEquivalenceDataset
+from src.datasets.speech_equivalence import SpeechEquivalenceDataset, load_or_make_timit_equivalence_dataset
 from src.models import integrator
+from src.utils.timit import load_or_prepare_timit_corpus
 
 L = logging.getLogger(__name__)
 
@@ -69,17 +70,17 @@ def train(config: DictConfig):
     base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref)
 
     # Prepare basic speech dataset
-    dataset = instantiate(config.dataset, processor=processor)
+    dataset = instantiate(config.dataset, processor=processor,
+                          _convert_="partial")
 
     # Prepare equivalence-classing dataset
     equiv_name = f"{config.model.base_model_ref}_{config.model.base_model_layer}-{config.equivalence.equivalence_classer}-{config.equivalence.num_frames_per_phoneme}"
     equiv_name = equiv_name.replace("/", "-")
-    equiv_dataset = instantiate(
-        config.equivalence,
-        name=equiv_name,
-        dataset=dataset,
-        model=base_model,
-        layer=config.model.base_model_layer)
+    equiv_dataset = load_or_make_timit_equivalence_dataset(
+        name=equiv_name, dataset=dataset, model=base_model,
+        layer=config.model.base_model_layer,
+        **config.equivalence
+    )
 
     # Prepare negative-sampling dataset
     dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
