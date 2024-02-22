@@ -201,7 +201,7 @@ def make_timit_equivalence_dataset(name: str,
             flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
             frames_by_item[idx] = (flat_idx_offset, len(flat_idxs))
             frame_states_list.append(hidden_states_i[:num_frames_i])
-    dataset.map(extract_representations, batched=True, batch_size=6, with_indices=True,
+    dataset.map(extract_representations, batched=True, batch_size=32, with_indices=True,
                 desc="Extracting hidden states")
 
     # Align with TIMIT annotations
