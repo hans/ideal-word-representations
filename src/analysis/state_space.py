@@ -53,12 +53,33 @@ class StateSpaceAnalysisSpec:
                 label_idx = self.labels.index(label)
                 start, end = self.target_frame_spans[label_idx][instance_idx]
 
-                print(start, end, cuts_group)
                 assert (cuts_group.onset_frame_idx >= start).all()
                 assert (cuts_group.offset_frame_idx <= end).all()
 
     def is_compatible_with(self, dataset: SpeechEquivalenceDataset) -> bool:
         return self.total_num_frames == dataset.hidden_state_dataset.num_frames
+    
+    def drop_labels(self, drop_idxs=None, drop_names=None):
+        if drop_idxs is None and drop_names is None:
+            raise ValueError("Must provide either drop_idxs or drop_names")
+        
+        if drop_idxs is None:
+            drop_idxs = [i for i, label in enumerate(self.labels) if label in drop_names]
+        
+        labels = [label for i, label in enumerate(self.labels) if i not in drop_idxs]
+        target_frame_spans = [span for i, span in enumerate(self.target_frame_spans) if i not in drop_idxs]
+
+        new_cuts = None
+        if self.cuts is not None:
+            mask = self.cuts.index.get_level_values("label").isin(labels)
+            new_cuts = self.cuts.loc[mask]
+
+        return StateSpaceAnalysisSpec(
+            total_num_frames=self.total_num_frames,
+            labels=labels,
+            target_frame_spans=target_frame_spans,
+            cuts=new_cuts,
+        )
 
 
 def prepare_word_trajectory_spec(

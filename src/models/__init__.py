@@ -58,4 +58,8 @@ def get_best_checkpoint(trainer_dir) -> str:
     state = TrainerState.load_from_json(last_checkpoint / "trainer_state.json")
     best_checkpoint = state.best_model_checkpoint
 
+    # HACK: remove prefix from old cluster
+    if best_checkpoint.startswith("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):
+        best_checkpoint = best_checkpoint[len("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):]
+
     return best_checkpoint
