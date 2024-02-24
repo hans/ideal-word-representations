@@ -47,6 +47,21 @@ rule run:
         """
 
 
+# Run train without actually training -- used to generate random model weights
+rule run_no_train:
+    output:
+        full_trace = directory("outputs/models/random_{model_name}/random")
+
+    shell:
+        """
+        python train_decoder.py \
+            hydra.run.dir={output.full_trace} \
+            model={wildcards.model_name} \
+            equivalence=phoneme \
+            trainer.do_train=false
+        """
+
+
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",

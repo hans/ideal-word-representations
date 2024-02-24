@@ -87,13 +87,17 @@ def train(config: DictConfig):
         layer=config.model.base_model_layer)
 
     # Prepare negative-sampling dataset
-    dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
-    neg_dataset, max_length = prepare_neg_dataset(equiv_dataset)
-    neg_dataset_split = neg_dataset.train_test_split(test_size=0.1, shuffle=True)
-    neg_dataset_split.save_to_disk(dataset_path)
+    if config.trainer.do_train:
+        dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
+        neg_dataset, max_length = prepare_neg_dataset(equiv_dataset)
+        neg_dataset_split = neg_dataset.train_test_split(test_size=0.1, shuffle=True)
+        neg_dataset_split.save_to_disk(dataset_path)
 
-    train_dataset = neg_dataset_split["train"]
-    eval_dataset = neg_dataset_split["test"]
+        train_dataset = neg_dataset_split["train"]
+        eval_dataset = neg_dataset_split["test"]
+    else:
+        train_dataset, eval_dataset = None, None
+        max_length = equiv_dataset.lengths.max().item()
 
     model_config = integrator.ContrastiveEmbeddingModelConfig(
         equivalence_classer=config.equivalence.equivalence_classer,
@@ -117,6 +121,7 @@ def train(config: DictConfig):
         callbacks = [instantiate(c) for c in config.trainer.callbacks]
     trainer_config = dict(config.trainer)
     trainer_config.pop("callbacks", None)
+    do_train = trainer_config.pop("do_train", True)
     trainer = transformers.Trainer(
         args=training_args,
         model=None, model_init=model_init,
@@ -124,4 +129,13 @@ def train(config: DictConfig):
         train_dataset=train_dataset, eval_dataset=eval_dataset,
         **trainer_config)
 
-    trainer.train()
+    if do_train:
+        trainer.train()
+    else:
+        checkpoint_dir = Path(training_args.output_dir) / "checkpoint-0"
+        checkpoint_dir.mkdir(exist_ok=True, parents=True)
+        trainer.save_model(checkpoint_dir)
+
+        # Save dummy trainer state
+        trainer.state.best_model_checkpoint = str(checkpoint_dir)
+        trainer.state.save_to_json(checkpoint_dir / "trainer_state.json")

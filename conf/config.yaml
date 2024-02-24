@@ -44,6 +44,7 @@ training_args:
     - example_idx
 
 trainer:
+  do_train: true
   callbacks:
     - _target_: transformers.EarlyStoppingCallback
       early_stopping_patience: 3
