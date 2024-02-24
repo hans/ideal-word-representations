@@ -2,6 +2,9 @@
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 HTTP = HTTPRemoteProvider()
 
+ruleorder:
+    run_no_train > run
+
 
 # Download and convert fairseq wav2vec2 model pretrained on AudioSet data
 # to a Huggingface model
@@ -50,13 +53,13 @@ rule run:
 # Run train without actually training -- used to generate random model weights
 rule run_no_train:
     output:
-        full_trace = directory("outputs/models/random_{model_name}/random")
+        full_trace = directory("outputs/models/random{model_name}/random")
 
     shell:
         """
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
-            model={wildcards.model_name} \
+            model=random{wildcards.model_name} \
             equivalence=phoneme \
             trainer.do_train=false
         """
