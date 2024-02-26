@@ -22,6 +22,7 @@ class RNNModel(nn.Module):
     def __init__(self, num_layers, input_dim, hidden_dim, output_dim, type="lstm"):
         super(RNNModel, self).__init__()
         if num_layers == 0:
+            assert hidden_dim == input_dim, f"Hidden dim {hidden_dim} must match input dim {input_dim} if num_layers is 0"
             self.rnn = nn.Identity()
         else:
             fn = nn.LSTM if type == "lstm" else nn.RNN
@@ -31,7 +32,12 @@ class RNNModel(nn.Module):
     def forward(self, x, lengths):
         lengths = lengths.to("cpu")
         packed_input = nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
-        packed_output, _ = self.rnn(packed_input)
+
+        if isinstance(self.rnn, nn.Identity):
+            packed_output = packed_input
+        else:
+            packed_output, _ = self.rnn(packed_input)
+
         output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
         output = self.fc(output)
         return output
