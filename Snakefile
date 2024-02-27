@@ -2,8 +2,23 @@
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 HTTP = HTTPRemoteProvider()
 
+configfile: "config.yaml"
+
 ruleorder:
     run_no_train > run
+
+
+ALL_NOTEBOOKS = [
+    "lexical_coherence",
+    "syllable_coherence",
+    "syllable_coherence_by_position",
+    "phoneme_coherence",
+    "phoneme_coherence_by_position",
+    "temporal_generalization_word",
+    "temporal_generalization_phoneme",
+    "predictions",
+    "predictions_word",
+]
 
 
 # Download and convert fairseq wav2vec2 model pretrained on AudioSet data
@@ -65,6 +80,12 @@ rule run_no_train:
         """
 
 
+MODEL_SPEC_LIST = [f"{m['model']}/{m['equivalence']}" for m in config["models"]]
+rule run_all:
+    input:
+        expand("outputs/models/{model_spec}", model_spec=MODEL_SPEC_LIST)
+
+
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",
@@ -80,3 +101,9 @@ rule run_notebook:
             -p model_dir {input.model_dir} \
             -p output_dir {output.outdir}
         """
+
+
+rule run_all_notebooks:
+    input:
+        expand("outputs/notebooks/{model_spec}/{notebook}/{notebook}.ipynb",
+                model_spec=MODEL_SPEC_LIST, notebook=ALL_NOTEBOOKS)

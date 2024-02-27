@@ -1,0 +1,26 @@
+
+
+models:
+  - model: w2v2_6_8
+    equivalence: phoneme
+  - model: w2v2_6_8
+    equivalence: syllable
+  - model: w2v2_6_8
+    equivalence: next_phoneme
+
+  - model: w2v2_6_32
+    equivalence: phoneme_within_word_prefix
+  - model: w2v2_6_32
+    equivalence: phoneme_within_word_suffix
+
+  # random LSTM models
+  - model: random_w2v2_6_8
+    equivalence: random
+  - model: random_w2v2_6_32
+    equivalence: random
+
+  # random feedforward models
+  - model: randomff_w2v2_6_8
+    equivalence: random
+  - model: randomff_w2v2_6_32
+    equivalence: random
