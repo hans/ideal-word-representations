@@ -1,3 +1,4 @@
+import yaml
 
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 HTTP = HTTPRemoteProvider()
@@ -19,6 +20,15 @@ ALL_NOTEBOOKS = [
     "predictions",
     "predictions_word",
 ]
+
+
+def hydra_param(obj):
+    """
+    Prepare the given object for use as a Hydra CLI / YAML override.
+    """
+    if isinstance(obj, snakemake.io.Namedlist):
+        obj = list(obj)
+    return yaml.safe_dump(obj, default_flow_style=True, width=float("inf")).strip()
 
 
 # Download and convert fairseq wav2vec2 model pretrained on AudioSet data
@@ -107,3 +117,29 @@ rule run_all_notebooks:
     input:
         expand("outputs/notebooks/{model_spec}/{notebook}/{notebook}.ipynb",
                 model_spec=MODEL_SPEC_LIST, notebook=ALL_NOTEBOOKS)
+
+
+rule estimate_encoder:
+    output:
+        model_dir = directory("outputs/encoders/{feature_sets}/{subject}"),
+        electrodes = "outputs/encoders/{feature_sets}/{subject}/electrodes.csv",
+        scores = "outputs/encoders/{feature_sets}/{subject}/scores.csv",
+        predictions = "outputs/encoders/{feature_sets}/{subject}/predictions.npy",
+        coefs = "outputs/encoders/{feature_sets}/{subject}/coefs.csv"
+
+    run:
+        try:
+            data_spec = next(iter(data_spec for data_spec in config["encoding"]["data"] if data_spec["subject"] == wildcards.subject))
+        except StopIteration:
+            raise ValueError(f"Subject {wildcards.subject} not found in config")
+
+        data_spec = [{"subject": wildcards.subject,
+                      "block": block} for block in data_spec["blocks"]]
+        data_spec = hydra_param(data_spec)
+
+        shell("""
+        python estimate_encoder.py \
+            hydra.run.dir={output.model_dir} \
+            feature_sets={wildcards.feature_sets} \
+            +data='{data_spec}'
+        """)

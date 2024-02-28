@@ -1,6 +1,8 @@
 
-
 models:
+  - model: w2v2_6_3
+    equivalence: phoneme
+
   - model: w2v2_6_8
     equivalence: phoneme
   - model: w2v2_6_8
@@ -24,3 +26,9 @@ models:
     equivalence: random
   - model: randomff_w2v2_6_32
     equivalence: random
+
+encoding:
+  data:
+    - subject: EC152
+      blocks:
+        - B22

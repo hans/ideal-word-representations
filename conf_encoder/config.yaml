@@ -1,0 +1,19 @@
+defaults:
+  - _self_
+  - feature_sets: baseline
+  - corpus: timit_spirit
+
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/encoding_models/${hydra:job.name}
+
+
+cv:
+  _target_: sklearn.model_selection.KFold
+  n_splits: 3
+  shuffle: false
