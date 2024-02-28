@@ -26,8 +26,9 @@ def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], li
                                             config.corpus.name,
                                             data_spec.subject)
 
+    feature_sets = config.feature_sets.baseline_features
     X, Y, feature_names, feature_shapes = \
-        timit_encoding.prepare_strf_xy(out, config.feature_sets, data_spec.subject)
+        timit_encoding.prepare_strf_xy(out, feature_sets, data_spec.subject)
 
     return X, Y, feature_names, feature_shapes
 

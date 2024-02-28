@@ -233,6 +233,15 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
 
         # print(list(zip([xi.shape for xi in Xi], feature_names_i)))
         Xi = np.stack(Xi).astype(float).T
+
+        # Remove padding
+        padding = tuple(trial.get("befaft", (0.5, 0.5)))
+        start_sample = int(padding[0] * dataf)
+        end_sample = Xi.shape[0] - int(padding[1] * dataf)
+
+        Xi = Xi[start_sample:end_sample]
+        Yi = Yi[start_sample:end_sample]
+
         X.append(Xi)
         Y.append(Yi)
 
@@ -245,7 +254,6 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
 
     # TODO sound onset -- strf_makeXtimeLag:79
     # TODO boundaries
-    # TODO remove zero-padding on trials
     X = np.concatenate(X)
     Y = np.concatenate(Y, axis=1).T
     
