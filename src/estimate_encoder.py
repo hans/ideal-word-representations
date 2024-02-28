@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
 from omegaconf import DictConfig
@@ -26,9 +27,13 @@ def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], li
                                             config.corpus.name,
                                             data_spec.subject)
 
-    feature_sets = config.feature_sets.baseline_features
-    X, Y, feature_names, feature_shapes = \
-        timit_encoding.prepare_strf_xy(out, feature_sets, data_spec.subject)
+    baseline_feature_sets = config.feature_sets.baseline_features
+    X, Y, feature_names, feature_shapes = timit_encoding.prepare_strf_xy(
+        out, baseline_feature_sets, data_spec.subject)
+    
+    # TODO extract feature representations from model embeddings if provided,
+    # with some aggregation strategy
+    # TODO align with TIMIT Xy representation and do sanity checks
 
     return X, Y, feature_names, feature_shapes
 
@@ -45,6 +50,8 @@ def main(config):
     Estimate a single TRF encoder by concatenating one or more blocks of data.
     """
 
+    out_dir = Path(HydraConfig.get().runtime.output_dir)
+
     # All data should be from the same subject
     all_subjects = set(data_spec.subject for data_spec in config.data)
     assert len(all_subjects) == 1, f"All data should be from the same subject. Got: {all_subjects}"
@@ -52,7 +59,7 @@ def main(config):
 
     # Prepare electrode metadata
     electrode_df = get_electrode_df(config, subject)
-    electrode_df.to_csv("electrodes.csv")
+    electrode_df.to_csv(out_dir / "electrodes.csv")
 
     all_xy = [prepare_xy(config, data_spec) for data_spec in tqdm(config.data, desc="Prepare design matrix")]
     X, Y, feature_names, feature_shapes = timit_encoding.concat_xy(all_xy)
@@ -73,11 +80,11 @@ def main(config):
         columns=pd.Index(list(range(scores[0].shape[0])), name="output_dim"))
     scores_df = scores_df.reset_index().melt(id_vars="fold", var_name="output_dim", value_name="score")
     scores_df["output_name"] = scores_df.output_dim.map(dict(enumerate(electrode_df.index)))
-    scores_df.to_csv("scores.csv", index=False)
+    scores_df.to_csv(out_dir / "scores.csv", index=False)
 
     coef_df = timit_encoding.trf_grid_to_df(best_model, coefs,
                                             output_names=electrode_df.index)
-    coef_df.to_csv("coefs.csv", index=False)
+    coef_df.to_csv(out_dir / "coefs.csv", index=False)
 
     preds = np.concatenate(preds, axis=0)
-    np.save("predictions.npy", preds)
+    np.save(out_dir / "predictions.npy", preds)

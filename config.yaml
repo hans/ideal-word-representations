@@ -32,3 +32,11 @@ encoding:
     - subject: EC152
       blocks:
         - B22
+
+    - subject: EC221
+      blocks:
+        - B1
+
+    - subject: EC225
+      blocks:
+        - B45

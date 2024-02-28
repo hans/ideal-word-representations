@@ -31,7 +31,6 @@ def add_details_to_out(out, sentdetV, infopath, corpus, cs):
 
     for i, trial in enumerate(out):
         name_i = trial["name"]
-        print(name_i)
         cl = strffeat_names.index(name_i)
         for field in addfields:
             trial[field] = strffeat[cl][field]
@@ -240,7 +239,7 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
         end_sample = Xi.shape[0] - int(padding[1] * dataf)
 
         Xi = Xi[start_sample:end_sample]
-        Yi = Yi[start_sample:end_sample]
+        Yi = Yi[:, start_sample:end_sample]
 
         X.append(Xi)
         Y.append(Yi)
