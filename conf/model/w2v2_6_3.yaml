@@ -1,0 +1,7 @@
+base_model_ref: facebook/wav2vec2-base
+base_model_layer: 6
+
+hidden_dim: 32
+output_dim: 3
+
+in_batch_soft_negatives: true
