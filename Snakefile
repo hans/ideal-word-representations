@@ -9,7 +9,8 @@ ruleorder:
     run_no_train > run
 
 
-ALL_NOTEBOOKS = [
+# Notebooks to run for intrinsic analysis on models
+ALL_MODEL_NOTEBOOKS = [
     "lexical_coherence",
     "syllable_coherence",
     "syllable_coherence_by_position",
@@ -20,6 +21,9 @@ ALL_NOTEBOOKS = [
     "predictions",
     "predictions_word",
 ]
+
+
+ALL_ENCODING_SUBJECTS = [data_spec['subject'] for data_spec in config["encoding"]["data"]]
 
 
 def hydra_param(obj):
@@ -116,7 +120,7 @@ rule run_notebook:
 rule run_all_notebooks:
     input:
         expand("outputs/notebooks/{model_spec}/{notebook}/{notebook}.ipynb",
-                model_spec=MODEL_SPEC_LIST, notebook=ALL_NOTEBOOKS)
+                model_spec=MODEL_SPEC_LIST, notebook=ALL_MODEL_NOTEBOOKS)
 
 
 rule estimate_encoder:
@@ -143,3 +147,29 @@ rule estimate_encoder:
             feature_sets={wildcards.feature_sets} \
             +data='{data_spec}'
         """)
+
+
+rule compare_encoder_within_subject:
+    input:
+        model1_output = "outputs/encoders/{comparison_model1}/{subject}/scores.csv",
+        model2_output = "outputs/encoders/{comparison_model2}/{subject}/scores.csv"
+
+    output:
+        notebook = "outputs/encoder_comparison/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
+        csv = "outputs/encoder_comparison/{subject}/{comparison_model2}-{comparison_model1}.csv"
+
+    shell:
+        """
+        papermill --log-output \
+            notebooks/encoding/compare_within_subject.ipynb {output.notebook} \
+            -p subject {wildcards.subject} \
+            -p model1 {wildcards.comparison_model1} \
+            -p model2 {wildcards.comparison_model2} \
+            -p output_csv {output.csv}
+        """
+
+
+rule compare_all_encoders_within_subject:
+    input:
+        lambda _: [f"outputs/encoder_comparison/{subject}/{comp['model2']}-{comp['model1']}.csv"
+                  for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]

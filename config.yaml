@@ -9,6 +9,10 @@ models:
     equivalence: syllable
   - model: w2v2_6_8
     equivalence: next_phoneme
+  - model: w2v2_6_8
+    equivalence: phoneme_within_word_prefix
+  - model: w2v2_6_8
+    equivalence: phoneme_within_word_suffix
 
   - model: w2v2_6_32
     equivalence: phoneme_within_word_prefix
@@ -33,10 +37,16 @@ encoding:
       blocks:
         - B22
 
-    - subject: EC221
+    - subject: EC196
       blocks:
         - B1
 
-    - subject: EC225
+    - subject: EC195
       blocks:
-        - B45
+        - B1
+
+  model_comparisons:
+    - model2: phoneme
+      model1: baseline
+    - model2: syllable
+      model1: baseline
