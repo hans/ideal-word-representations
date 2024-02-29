@@ -1,0 +1,11 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+  - aud
+
+model_features:
+  - model: w2v2_6_3/phoneme
+    featurization: last_frame
