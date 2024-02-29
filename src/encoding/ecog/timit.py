@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,9 @@ from sklearn.model_selection import KFold, GridSearchCV
 from tqdm.auto import tqdm
 
 from src.encoding.ecog import TemporalReceptiveField
+
+
+L = logging.getLogger(__name__)
 
 
 def add_details_to_out(out, sentdetV, infopath, corpus, cs):
@@ -212,13 +216,26 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
         # TODO what to do about repeats?
         Yi = trial[response_field]
         if Yi.ndim == 3:
-            # TODO ?
+            # TODO this sentence has repeats
             continue
     
         Xi = []
-        feature_names_i, feature_shape_i = [], []
+        feature_names_i, feature_shape_i, apparent_num_feature_samples = [], [], None
         for feature_lookup in feature_sets:
             feature = trial[feature_lookup]
+
+            # Check that feature num samples matches what we have so far
+            if apparent_num_feature_samples is not None:
+                if feature.shape[-1] != apparent_num_feature_samples:
+                    if feature.shape[-1] > apparent_num_feature_samples:
+                        if i == 0:
+                            L.warning(f"Feature {feature_lookup} has {feature.shape[-1]} samples, expected {apparent_num_feature_samples}. Trimming but you should check this!")
+                        feature = feature[:, :apparent_num_feature_samples]
+                    else:
+                        raise ValueError(f"Feature {feature_lookup} has {feature.shape[-1]} samples, expected {apparent_num_feature_samples}")
+            else:
+                apparent_num_feature_samples = feature.shape[-1]
+
             if feature.ndim == 2:
                 for j, feature_row in enumerate(feature):
                     Xi.append(feature_row)
@@ -226,9 +243,24 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
                     feature_names_i.append(f"{feature_lookup}_{j}")
                 feature_shape_i.append(feature.shape[0])
             else:
+                if feature.dtype.kind != "f":
+                    if feature_names is None:
+                        # This is the first trial we're processing; issue a warning
+                        # and continue
+                        L.warning(f"Coercing non-float feature {feature_lookup} with dtype {feature.dtype} to float")
+
+                    feature = feature.astype(float)
                 Xi.append(feature)
                 feature_names_i.append(feature_lookup)
                 feature_shape_i.append(1)
+
+        if apparent_num_feature_samples != Yi.shape[-1]:
+            if apparent_num_feature_samples > Yi.shape[-1]:
+                L.warning(f"Feature samples ({apparent_num_feature_samples}) do not match response samples ({Yi.shape[-1]}). Trimming features")
+                Xi = [xi[:, :Yi.shape[-1]] for xi in Xi]
+            else:
+                L.warning(f"Feature samples ({apparent_num_feature_samples}) do not match response samples ({Yi.shape[-1]}). Trimming response")
+                Yi = Yi[:, :apparent_num_feature_samples]
 
         # print(list(zip([xi.shape for xi in Xi], feature_names_i)))
         Xi = np.stack(Xi).astype(float).T

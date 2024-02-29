@@ -75,6 +75,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
     # Resample and align model embeddings to be the same size
     # as the ECoG data
     n_model_dims = model_embeddings.shape[1]
+    embedding_misses = 0
     for i, out_i in enumerate(out):
         name = out_i["name"]
 
@@ -89,6 +90,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
             # TODO how to handle this -- we shouldn't score on sentences not included
             # in the embedding data
             L.warning(f"Skipping {name} as it is not in the embedding set")
+            embedding_misses += 1
             continue
 
         # TODO make this logic customizable
@@ -108,6 +110,9 @@ def load_and_align_model_embeddings(config, data_spec, out):
             embedding_data[:, unit_start_ecog] = model_embeddings[frame_start + unit_end]
 
         out_i["model_embedding"] = embedding_data
+
+    if embedding_misses > 0:
+        L.warning(f"Skipped {embedding_misses} sentences ({embedding_misses / len(out) * 100}%) as they were not in the embedding set")
 
     return out
     
