@@ -282,6 +282,8 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
     Y = np.concatenate(Y, axis=1).T
     
     # Center and scale features
+    center_features = np.concatenate([np.ones(shape) * center for shape, center in zip(feature_shapes, center_features)])
+    scale_features = np.concatenate([np.ones(shape) * scale for shape, scale in zip(feature_shapes, scale_features)]).astype(bool)
     X -= X.mean(axis=0) * center_features
 
     scale_denoms = X.max(axis=0) - X.min(axis=0)
