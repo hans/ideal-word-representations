@@ -107,7 +107,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
             # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
             unit_start_ecog = int((0.5 + unit_start_secs) * 100)
 
-            embedding_data[:, unit_start_ecog] = model_embeddings[frame_start + unit_end]
+            embedding_data[:, unit_start_ecog] = model_embeddings[frame_start:frame_start + unit_end].mean(axis=0)
 
         out_i["model_embedding"] = embedding_data
 
