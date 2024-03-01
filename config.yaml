@@ -13,6 +13,8 @@ models:
     equivalence: phoneme_within_word_prefix
   - model: w2v2_6_8
     equivalence: phoneme_within_word_suffix
+  - model: w2v2_6_8
+    equivalence: word
 
   - model: w2v2_6_32
     equivalence: phoneme_within_word_prefix
@@ -44,6 +46,14 @@ encoding:
     - subject: EC195
       blocks:
         - B1
+
+    - subject: EC183
+      blocks:
+        - B43
+
+    - subject: EC212
+      blocks:
+        - B13
 
   model_comparisons:
     - model2: phoneme
