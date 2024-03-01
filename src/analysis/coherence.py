@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import pandas as pd
 from scipy.spatial.distance import cdist
 from tqdm.auto import tqdm
 
@@ -91,3 +92,64 @@ def estimate_between_distance(trajectory, lengths,
                 ).mean()
 
     return between_distances, between_distances_offset
+
+
+def estimate_category_within_between_distance(trajectory, lengths,
+                                              category_assignment,
+                                              labels=None,
+                                              num_samples=50, max_num_instances=50,
+                                              metric=None):
+    # """
+    # Returns:
+    # - idxs: indices of items used to compute within- and between-category distances
+    # - matched_distances: pairwise distance matrix, aligned to trajectory onset
+    # - matched_distances_offset: pairwise distance matrix, aligned to trajectory offset and counting backwards
+    # - mismatched_distances
+    # - mismatched_distances_offset
+    # """
+
+    assert len(trajectory) == len(category_assignment) == len(lengths)
+
+    # Only estimate distances for items with category assignment
+    item_mask = np.array([category is not None for category in category_assignment])
+
+    category_assignment = [category for category in category_assignment if category is not None]
+    trajectory = [trajectory[idx] for idx in item_mask.nonzero()[0]]
+    lengths = [lengths[idx] for idx in item_mask.nonzero()[0]]
+    labels = [labels[idx] for idx in item_mask.nonzero()[0]]
+
+    matched_samples, mismatched_samples = [], []
+    for i, category_i in enumerate(category_assignment):
+        matched_items_i = [j for j, category_j in enumerate(category_assignment)
+                           if category_j == category_i and j != i]
+        mismatched_items_i = [j for j, category_j in enumerate(category_assignment)
+                              if category_j != category_i]
+        
+        matched_samples.append(np.random.choice(matched_items_i, min(num_samples, len(matched_items_i)), replace=False))
+        mismatched_samples.append(np.random.choice(mismatched_items_i, min(num_samples, len(mismatched_items_i)), replace=False))
+    
+    matched_distances, matched_distances_offset = estimate_between_distance(
+        trajectory, lengths, state_space_spec=None, between_samples=matched_samples,
+        num_samples=num_samples, max_num_instances=max_num_instances, metric=metric
+    )
+
+    mismatched_distances, mismatched_distances_offset = estimate_between_distance(
+        trajectory, lengths, state_space_spec=None, between_samples=mismatched_samples,
+        num_samples=num_samples, max_num_instances=max_num_instances, metric=metric
+    )
+
+    if isinstance(labels, (list, tuple)):
+        labels = ["".join(label) for label in labels]
+    matched_df = pd.DataFrame(np.nanmean(matched_distances, axis=-1), index=pd.Index(labels, name="label")) \
+        .reset_index().melt(id_vars=["label"], var_name="frame", value_name="distance")
+    mismatched_df = pd.DataFrame(np.nanmean(mismatched_distances, axis=-1), index=pd.Index(labels, name="label")) \
+        .reset_index().melt(id_vars=["label"], var_name="frame", value_name="distance")
+    merged_df = pd.concat([matched_df.assign(type="matched"), mismatched_df.assign(type="mismatched")])
+
+    matched_offset_df = pd.DataFrame(np.nanmean(matched_distances_offset, axis=-1), index=pd.Index(labels, name="label")) \
+        .reset_index().melt(id_vars=["label"], var_name="frame", value_name="distance")
+    mismatched_offset_df = pd.DataFrame(np.nanmean(mismatched_distances_offset, axis=-1), index=pd.Index(labels, name="label")) \
+        .reset_index().melt(id_vars=["label"], var_name="frame", value_name="distance")
+    merged_offset_df = pd.concat([matched_offset_df.assign(type="matched"), mismatched_offset_df.assign(type="mismatched")])
+
+    return merged_df, merged_offset_df
