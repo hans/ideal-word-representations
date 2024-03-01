@@ -133,13 +133,21 @@ def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], li
                                             data_spec.subject)
     feature_sets = config.feature_sets.baseline_features[:]
 
+    center_features = [True] * len(feature_sets)
+    scale_features = [True] * len(feature_sets)
+
     # add model embeddings to out
     if getattr(config.feature_sets, "model_features", None):
         out = load_and_align_model_embeddings(config, data_spec, out)
         feature_sets.append("model_embedding")
 
+        center_features.append(False)
+        scale_features.append(False)
+
     X, Y, feature_names, feature_shapes = timit_encoding.prepare_strf_xy(
-        out, feature_sets, data_spec.subject)
+        out, feature_sets, data_spec.subject,
+        center_features=np.array(center_features),
+        scale_features=np.array(scale_features))
     
     return X, Y, feature_names, feature_shapes
 

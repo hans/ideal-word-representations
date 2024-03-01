@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from mne.decoding import ReceptiveField, TimeDelayingRidge
 import numpy as np
@@ -166,11 +166,10 @@ def add_details_to_out(out, sentdetV, infopath, corpus, cs):
 
 def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
                     fit_response_dimensions: Optional[list[int]] = None,
-                    scaleflag=1, response_field="resp") -> tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...]]:
+                    center_features: Union[bool, np.ndarray] = True,
+                    scale_features: Union[bool, np.ndarray] = True,
+                    response_field="resp") -> tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...]]:
     response_field = response_field or 'resp'
-
-    if not isinstance(scaleflag, np.ndarray) or scaleflag.ndim == 0:
-        scaleflag = scaleflag * np.ones(len(feature_sets))
 
     if fit_response_dimensions is None:
         # TODO this should go in a config file somewhere
@@ -188,25 +187,19 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
             fit_response_dimensions = list(range(256))
     
     # estimation parameters
+    if isinstance(center_features, bool):
+        center_features = center_features * np.ones(len(feature_sets))
+    if isinstance(scale_features, bool):
+        scale_features = scale_features * np.ones(len(feature_sets))
+
+    # TODO use or remove these
     inclSentOns = np.ones(len(feature_sets))
-    zscoreXflag = np.ones(len(feature_sets))
     zscoreYflag = np.zeros(len(feature_sets))
     scaleXflag = np.ones(len(feature_sets))
     scaleYflag = np.zeros(len(feature_sets))
     highpassflag = np.zeros(len(feature_sets))
-    modelnames = [f"{feature_sets[i]}_zX{zscoreXflag[i]}_zY{zscoreYflag[i]}_scX{scaleXflag[i]}_scY{scaleYflag[i]}_hp{highpassflag[i]}_SentOns{inclSentOns[i]}_sentScale{scaleflag[i]}"
-                  for i in range(len(feature_sets))]
-    
-    # STRF setup - do not change these parameters
-    time_lag = 0.6
-    regalphas = np.logspace(0, 7, 20)
 
     # paper strfs
-    nfold = 5;
-    fullmodel_flag = 0;
-    bootflag = 1;
-    nboots = 10;
-    edgeflag = 1;
     dataf = out[0]["dataf"];
     fs = out[0]["soundf"]
     # assert dataf == fs, f"Neural and sound sampling rate must match ({dataf} Hz != {fs} Hz)"
@@ -288,8 +281,12 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
     X = np.concatenate(X)
     Y = np.concatenate(Y, axis=1).T
     
-    X -= X.mean(axis=0)
-    X /= (X.max(axis=0) - X.min(axis=0))
+    # Center and scale features
+    X -= X.mean(axis=0) * center_features
+
+    scale_denoms = X.max(axis=0) - X.min(axis=0)
+    scale_denoms[~scale_features] = 1
+    X /= scale_denoms
 
     # Subset instructed electrodes
     if fit_response_dimensions is not None:
