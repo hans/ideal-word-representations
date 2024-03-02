@@ -15,6 +15,10 @@ models:
     equivalence: phoneme_within_word_suffix
   - model: w2v2_6_8
     equivalence: word
+  - model: w2v2_6_8
+    equivalence: biphone_recon
+  - model: w2v2_6_8
+    equivalence: biphone_pred
 
   - model: w2v2_6_32
     equivalence: phoneme_within_word_prefix
@@ -33,6 +37,7 @@ models:
   - model: randomff_w2v2_6_32
     equivalence: random
 
+# TODO need more than one block. Expect to see r =~ 0.6
 encoding:
   data:
     - subject: EC152
