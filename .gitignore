@@ -8,3 +8,6 @@ __pycache__
 out
 outputs
 .snakemake
+
+# transient notebooks
+202*.ipynb
