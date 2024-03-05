@@ -1,9 +1,12 @@
 import logging
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
 from tqdm.auto import tqdm
+
+from src.analysis.state_space import StateSpaceAnalysisSpec, prepare_state_trajectory
 
 
 L = logging.getLogger(__name__)
@@ -92,6 +95,96 @@ def estimate_between_distance(trajectory, lengths,
                 ).mean()
 
     return between_distances, between_distances_offset
+
+
+def estimate_within_between_distance_by_cut_index(
+        state_space_spec, model_representations, cut_level,
+        num_samples=50, max_num_instances=50, metric=None):
+    state_space_spec_expanded = state_space_spec.expand_by_cut_index(cut_level)
+    expanded_label2idx = {label: idx for idx, label in enumerate(state_space_spec_expanded.labels)}
+
+    trajectory_expanded = prepare_state_trajectory(
+        model_representations, state_space_spec_expanded, pad=np.nan)
+    trajectory_expanded_lengths = [np.isnan(traj_i[:, :, 0]).argmax(axis=1) for traj_i in trajectory_expanded]
+
+    between_samples = [np.random.choice(list(range(idx)) + list(range(idx + 1, len(state_space_spec.labels))),
+                                    size=50, replace=False)
+                   for idx in range(len(state_space_spec.labels))]
+
+    within_distances = {label: [] for label in state_space_spec_expanded.labels}
+    between_distances = {label: [] for label in state_space_spec_expanded.labels}
+
+    cuts_df = state_space_spec.cuts.xs("phoneme", level="level").copy()
+    cuts_df["num_frames"] = cuts_df.offset_frame_idx - cuts_df.onset_frame_idx
+    cuts_df["idx_in_level"] = cuts_df.groupby(["label", "instance_idx"]).cumcount()
+    frames_per_cut = cuts_df.groupby("idx_in_level").apply(lambda xs: np.percentile(xs.num_frames, 95)).astype(int)
+    
+    for i, (label, between_samples_i) in enumerate(zip(tqdm(state_space_spec.labels), between_samples)):
+        between_labels_i = [state_space_spec.labels[j] for j in between_samples_i]
+
+        for k in frames_per_cut.index:
+            max_num_frames_k = frames_per_cut.loc[k]
+            if (label, k) not in expanded_label2idx:
+                continue
+
+            expanded_label_idx = expanded_label2idx[label, k]
+            trajectory_ik = trajectory_expanded[expanded_label_idx]
+            lengths_ik = trajectory_expanded_lengths[expanded_label_idx]
+
+            if trajectory_ik.shape[0] > max_num_instances:
+                idxs = np.random.choice(trajectory_ik.shape[0], max_num_instances, replace=False)
+                trajectory_ik = trajectory_ik[idxs]
+                lengths_ik = lengths_ik[idxs]
+
+            expanded_between_labels_idxs_ik = [expanded_label2idx[label, k] for label in between_labels_i
+                                               if (label, k) in expanded_label2idx]
+
+            for between_ikl in expanded_between_labels_idxs_ik:
+                trajectory_ikl = trajectory_expanded[between_ikl]
+                lengths_ikl = trajectory_expanded_lengths[between_ikl]
+
+                if trajectory_ikl.shape[0] > max_num_instances:
+                    idxs = np.random.choice(trajectory_ikl.shape[0], max_num_instances, replace=False)
+                    trajectory_ikl = trajectory_ikl[idxs]
+                    lengths_ikl = lengths_ikl[idxs]
+
+                for m in range(min(trajectory_ik.shape[1], max_num_frames_k)):
+                    mask_ik = lengths_ik > m
+                    mask_ikl = lengths_ikl > m
+                    if mask_ik.sum() == 0 or mask_ikl.sum() == 0:
+                        break
+        
+                    assert not (np.isnan(trajectory_ikl[mask_ikl, m, :]).any())
+                    assert not (np.isnan(trajectory_ik[mask_ik, m, :]).any())
+
+                    between_distances[label, k].append(
+                        get_mean_distance(trajectory_ik[mask_ik, m, :],
+                                          trajectory_ikl[mask_ikl, m, :], metric=metric)
+                    )
+
+            # Estimate within-distance
+            for m in range(min(trajectory_ik.shape[1], max_num_frames_k)):
+                mask_ik = lengths_ik > m
+                if mask_ik.sum() <= 1:
+                    break
+
+                within_distances[label, k].append(
+                    get_mean_distance(trajectory_ik[mask_ik, m, :],
+                                      trajectory_ik[mask_ik, m, :], metric=metric)
+                )
+
+
+    within_distances = pd.DataFrame(
+        [np.nanmean(distances) for distances in within_distances.values()],
+        columns=["distance"],
+        index=pd.MultiIndex.from_tuples(within_distances.keys(), names=["label", "cut_idx"]))
+    between_distances = pd.DataFrame(
+        [np.nanmean(distances) for distances in between_distances.values()],
+        columns=["distance"],
+        index=pd.MultiIndex.from_tuples(between_distances.keys(), names=["label", "cut_idx"]))
+    
+    return pd.concat([within_distances.assign(type="within"), between_distances.assign(type="between")])
+    
 
 
 def estimate_category_within_between_distance(trajectory, lengths,

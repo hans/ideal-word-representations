@@ -80,6 +80,30 @@ class StateSpaceAnalysisSpec:
             target_frame_spans=target_frame_spans,
             cuts=new_cuts,
         )
+    
+    def expand_by_cut_index(self, cut_level: str) -> "StateSpaceAnalysisSpec":
+        """
+        Expand the state space analysis spec to include information about
+        the given cut index within each class instance.
+        """
+        if self.cuts is None:
+            raise ValueError("No cuts available to expand")
+
+        cuts_df = self.cuts.xs(cut_level, level="level")
+        cuts_df["idx_in_level"] = cuts_df.groupby(["label", "instance_idx"]).cumcount()
+        new_target_frame_spans = []
+        new_labels = []
+
+        for (label, idx_in_level), cuts_group in cuts_df.groupby(["label", "idx_in_level"]):
+            new_labels.append((label, idx_in_level))
+            new_target_frame_spans.append(list(zip(cuts_group.onset_frame_idx, cuts_group.offset_frame_idx)))
+
+        return StateSpaceAnalysisSpec(
+            total_num_frames=self.total_num_frames,
+            labels=new_labels,
+            target_frame_spans=new_target_frame_spans,
+            cuts=None,
+        )
 
 
 def prepare_word_trajectory_spec(
