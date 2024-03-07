@@ -67,6 +67,23 @@ rule prepare_audioset:
         """
 
 
+rule preprocess_timit:
+    input:
+        timit_raw = config["datasets"]["timit"]["raw_path"]
+
+    output:
+        data_path = directory("outputs/preprocessed_data/timit"),
+        notebook_path = "outputs/preprocessing/timit.ipynb"
+
+    shell:
+        """
+        papermill --log-output notebooks/preprocessing/timit.ipynb \
+            {outputs.notebook_path} \
+            -p base_dir {workflow.basedir} \
+            -p dataset_path {input.timit_raw} \
+            -p out_path {output.data_path}"
+
+
 rule run:
     output:
         full_trace = directory("outputs/models/{model_name}/{equivalence_classer}")

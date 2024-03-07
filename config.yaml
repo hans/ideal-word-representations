@@ -1,3 +1,7 @@
+datasets:
+  timit:
+    raw_path: data/timit_raw
+
 
 models:
   - model: w2v2_6_3

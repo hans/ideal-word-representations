@@ -198,11 +198,20 @@ def group_phonetic_detail(item, idx, drop_phones=None, key="phonetic_detail"):
                 phone_mask[j] = True
                 word_phonetic_detail[-1].append({"phone": phon, "start": phon_start, "stop": phon_stop})
 
+        if len(word_phonetic_detail[-1]) == 0:
+            preceding_word_phones = " ".join(phone["phone"] for phone in word_phonetic_detail[-2]) if len(word_phonetic_detail) > 1 else ""
+            L.warning(f"No phones found for word {word} in item {idx} ({item['text']}) (preceding word: {preceding_word_phones})")
+
     for unused_phone in np.flatnonzero(~phone_mask):
         preceding_phones = " ".join(phonetic_detail["utterance"][max(0, unused_phone - 3):unused_phone])
         following_phones = " ".join(phonetic_detail["utterance"][unused_phone + 1:min(len(phonetic_detail["utterance"]), unused_phone + 4)])
         unused_phone_str = phonetic_detail["utterance"][unused_phone]
         L.warning(f"Unused phone {unused_phone_str} in item {idx} ({item['text']}) (preceding: {preceding_phones}, following: {following_phones})")
+
+    # from pprint import pprint
+    # pprint(list(zip(word_detail["start"], word_detail["stop"], word_detail["utterance"])))
+    # pprint(list(zip(phonetic_detail["start"], phonetic_detail["stop"], phonetic_detail["utterance"])))
+    # pprint(word_phonetic_detail)
 
     item[f"word_{key}"] = word_phonetic_detail
     return item
@@ -257,36 +266,45 @@ def add_syllabic_detail(item):
 
 
 def check_item(item, idx, drop_phones=None):
-    grouped_phonemic_detail = item["word_phonemic_detail"]
-    grouped_syllable_detail = item["word_syllable_detail"]
-    assert len(grouped_phonemic_detail) == len(item["word_detail"]["utterance"])
-    assert len(grouped_syllable_detail) == len(item["word_detail"]["utterance"])
+    try:
+        grouped_phonemic_detail = item["word_phonemic_detail"]
+        grouped_syllable_detail = item["word_syllable_detail"]
+        assert len(grouped_phonemic_detail) == len(item["word_detail"]["utterance"])
+        assert len(grouped_syllable_detail) == len(item["word_detail"]["utterance"])
 
-    all_phonemes = [phon["phone"] for word in grouped_phonemic_detail for phon in word]
-    all_phonemes_syll = [phone for word in item["word_syllable_detail"] for syllable in word for phone in syllable["phones"]]
-    assert len(all_phonemes) == len(all_phonemes_syll)
-    assert all_phonemes == all_phonemes_syll, "phonemic detail does not match phonemes within syllable detail"
+        # Our processing strategy does create empty words.
+        # We assign phones to the earliest word whose span contains the phoneme onset,
+        # and not to later words. Because TIMIT phones can span words, this can create
+        # empty words (e.g. where a single phoneme spans the offset of word 1 and the
+        # entirety of word 2).
+        # # No empty words
+        # assert all(len(word) > 0 for word in grouped_phonemic_detail)
+        # # No empty syllables
+        # assert all(len(syllables) > 0 for syllables in grouped_syllable_detail), \
+        #     f"Empty syllables in item {idx} ({item['text']})"
 
-    # NB we do expect a mismatch here since some phonemes in the flat representation
-    # won't appear in the word grouped representation, if they are outside the span of a word
-    # all_phonemes_flat = [ph for ph in item["phonemic_detail"]["utterance"] if ph not in (drop_phones or [])]
-    # assert all_phonemes == all_phonemes_flat, \
-    #     f"grouped phonemic detail does not match non-grouped phonemic detail in item {idx}:" \
-    #     f"\n{item['text']}\n{all_phonemes}\n{all_phonemes_flat}"
+        all_phonemes = [phon["phone"] for word in grouped_phonemic_detail for phon in word]
+        all_phonemes_syll = [phone for word in item["word_syllable_detail"] for syllable in word for phone in syllable["phones"]]
+        assert len(all_phonemes) == len(all_phonemes_syll)
+        assert all_phonemes == all_phonemes_syll, "phonemic detail does not match phonemes within syllable detail"
+
+        # NB we do expect a mismatch here since some phonemes in the flat representation
+        # won't appear in the word grouped representation, if they are outside the span of a word
+        # all_phonemes_flat = [ph for ph in item["phonemic_detail"]["utterance"] if ph not in (drop_phones or [])]
+        # assert all_phonemes == all_phonemes_flat, \
+        #     f"grouped phonemic detail does not match non-grouped phonemic detail in item {idx}:" \
+        #     f"\n{item['text']}\n{all_phonemes}\n{all_phonemes_flat}"
+    except Exception as e:
+        L.error(f"Error in item {idx} ({item['text']})")
+        raise e
 
 
-def prepare_timit_corpus(data_dir,
-                         processor: transformers.Wav2Vec2Processor,
-                         add_phoneme_targets=False,
-                         drop_phones=("[SIL]",)):
+def prepare_corpus(corpus,
+                   processor: transformers.Wav2Vec2Processor,
+                   drop_phones=("[SIL]",)):
     """
     Load and prepare TIMIT corpus for training.
     """
-
-    if (Path(data_dir) / "dataset_dict.json").exists():
-        corpus = load_dataset(data_dir)
-    else:
-        corpus = load_dataset("timit_asr", data_dir=data_dir)
 
     phone_vocab = set(processor.tokenizer.get_vocab().keys())
     # Sanity check: all TIMIT mapped to CMU targets should be in the vocab
@@ -318,6 +336,9 @@ def prepare_timit_corpus(data_dir,
         batch["input_values"] = processor(audio["array"], sampling_rate=audio["sampling_rate"]).input_values[0]
         return batch
     corpus = corpus.map(prepare_audio)
+
+    # Remove original audio
+    corpus = corpus.remove_columns("audio")
     
     return corpus
 
@@ -333,6 +354,13 @@ def load_or_prepare_timit_corpus(processed_data_dir,
     if Path(processed_data_dir).exists():
         corpus = load_from_disk(processed_data_dir)
     else:
-        corpus = prepare_timit_corpus(raw_data_dir, processor, drop_phones=drop_phones)
+        if (Path(raw_data_dir) / "dataset_dict.json").exists():
+            # Huggingface-style raw TIMIT
+            raw_corpus = load_dataset(raw_data_dir)
+        else:
+            # real raw TIMIT
+            raw_corpus = load_dataset("timit_asr", data_dir=raw_data_dir)
+
+        corpus = prepare_corpus(raw_corpus, processor, drop_phones=drop_phones)
         corpus.save_to_disk(processed_data_dir)
     return corpus
