@@ -12,6 +12,7 @@ import transformers
 
 from src.datasets.speech_equivalence import SpeechEquivalenceDataset, load_or_make_timit_equivalence_dataset
 from src.models import integrator
+from src.models.transformer import prepare_processor
 from src.utils.timit import load_or_prepare_timit_corpus
 
 L = logging.getLogger(__name__)
@@ -59,14 +60,7 @@ def train(config: DictConfig):
             L.error("CUDA is not available. Falling back to CPU.")
             config.device = "cpu"
 
-    tokenizer = instantiate(config.tokenizer)
-    feature_extractor = instantiate(config.feature_extractor,
-                                    padding_value=0.0,
-                                    do_normalize=True,
-                                    return_attention_mask=False)
-    processor = transformers.Wav2Vec2Processor(
-        feature_extractor=feature_extractor, tokenizer=tokenizer)
-
+    processor = prepare_processor(config)
     base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref).to(config.device)
 
     # Prepare basic speech dataset

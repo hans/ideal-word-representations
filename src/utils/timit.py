@@ -9,7 +9,6 @@ import pandas as pd
 import soundfile as sf
 import torch
 
-from src.models.transformer import TilingWordFeatureExtractor2
 from src.utils import syllabifier
 
 
@@ -18,7 +17,6 @@ import numpy as np
 L = logging.getLogger(__name__)
 
 
-# TODO cross-check resulting mappings with cmudict
 TIMIT_MAPPING = {
     'ax': 'AH',
     'ax-h': 'AH',

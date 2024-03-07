@@ -117,7 +117,6 @@ class SpeechEquivalenceDataset:
 
     name: str
 
-    hidden_state_dataset: SpeechHiddenStateDataset
     Q: Int64[T, "num_frames"]
     S: Int64[T, "num_frames"]
 
@@ -127,8 +126,7 @@ class SpeechEquivalenceDataset:
     """
 
     def __post_init__(self):
-        assert self.Q.shape[0] == self.hidden_state_dataset.num_frames
-        assert self.S.shape[0] == self.hidden_state_dataset.num_frames
+        assert self.Q.shape[0] == self.S.shape[0]
 
         assert self.Q.max() < len(self.class_labels)
         assert self.Q.min() >= -1
@@ -143,7 +141,10 @@ class SpeechEquivalenceDataset:
         assert evident_lengths.max() < insane_length
 
     def __repr__(self):
-        return f"SpeechEquivalenceDataset({self.name}, {self.num_classes} classes, {self.num_instances} instances, with {self.hidden_state_dataset})"
+        return f"SpeechEquivalenceDataset({self.name}, {self.num_classes} classes, {self.num_instances} instances)"
+
+    def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
+        return self.Q.shape[0] == dataset.num_frames
 
     @property
     def num_instances(self) -> int:
@@ -162,9 +163,8 @@ class SpeechEquivalenceDataset:
 
 def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
+                                   hidden_states: SpeechHiddenStateDataset,
                                    model: transformers.PreTrainedModel,
-                                   processor: transformers.Wav2Vec2Processor,
-                                   layer: int,
                                    equivalence_classer: str,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
@@ -176,41 +176,8 @@ def make_timit_equivalence_dataset(name: str,
     """
     assert equivalence_classer in equivalence_classers
 
-    flat_idxs = []
-    frames_by_item = {}
-    frame_states_list = []
     frame_groups = defaultdict(list)
-
-    def collate_batch(batch):
-        batch = processor.pad(
-            [{"input_values": values_i} for values_i in batch["input_values"]],
-            max_length=None,
-            return_tensors="pt",
-            return_attention_mask=True)
-        return batch
-
-    # Extract and un-pad hidden representations from the model
-    def extract_representations(batch_items, idxs):
-        batch = collate_batch(batch_items)
-
-        with torch.no_grad():
-            output = model(output_hidden_states=True,
-                           input_values=batch["input_values"].to(model.device),
-                           attention_mask=batch["attention_mask"].to(model.device))
-
-        input_lengths = batch["attention_mask"].sum(dim=1)
-        frame_lengths = model._get_feat_extract_output_lengths(input_lengths)
-
-        # batch_size * sequence_length * hidden_size
-        batch_hidden_states = output.hidden_states[layer].cpu()
-
-        for idx, num_frames_i, hidden_states_i in zip(idxs, frame_lengths, batch_hidden_states):
-            flat_idx_offset = len(flat_idxs)
-            flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
-            frames_by_item[idx] = (flat_idx_offset, len(flat_idxs))
-            frame_states_list.append(hidden_states_i[:num_frames_i])
-    dataset.map(extract_representations, batched=True, batch_size=32, with_indices=True,
-                desc="Extracting hidden states")
+    frames_by_item = hidden_states.frames_by_item
 
     # Align with TIMIT annotations
     def process_item(item, idx):
@@ -242,21 +209,17 @@ def make_timit_equivalence_dataset(name: str,
                         frame_groups[class_label].append((idx, k))
     dataset.map(process_item, with_indices=True, desc="Aligning metadata")
 
-    frame_states = torch.cat(frame_states_list, dim=0)
-    frame_states = frame_states.unsqueeze(1).contiguous()
-    # frame_states: total_num_frames * 1 * hidden_size
-
     # Now run equivalence classing.
-    Q = torch.zeros(len(flat_idxs), dtype=torch.long) - 1
+    Q = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
     class_labels = list(frame_groups.keys())
     class_label_to_idx = {class_key: idx for idx, class_key in enumerate(class_labels)}
-    flat_idx_rev = {idx: i for i, idx in enumerate(flat_idxs)}
+    flat_idx_rev = {idx: i for i, idx in enumerate(hidden_states.flat_idxs)}
     for class_key, group in frame_groups.items():
         for idx, frame in group:
             Q[flat_idx_rev[idx, frame]] = class_label_to_idx[class_key]
 
     # Compute start frames.
-    S = torch.zeros(len(flat_idxs), dtype=torch.long) - 1
+    S = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
     start_reference = start_references[equivalence_classer]
     if start_reference == "word":
         def compute_start(item, idx):
@@ -308,12 +271,7 @@ def make_timit_equivalence_dataset(name: str,
     
     dataset.map(compute_start, with_indices=True, desc="Computing start frames")
 
-    # Prepare return datasets
-    hidden_state_dataset = SpeechHiddenStateDataset(model_name=model.name_or_path,
-                                                    states=frame_states,
-                                                    flat_idxs=flat_idxs)
     return SpeechEquivalenceDataset(name=name,
-                                    hidden_state_dataset=hidden_state_dataset,
                                     Q=Q,
                                     S=S,
                                     class_labels=class_labels)

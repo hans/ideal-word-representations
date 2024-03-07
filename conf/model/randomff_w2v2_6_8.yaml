@@ -1,6 +1,0 @@
-base_model_ref: facebook/wav2vec2-base
-base_model_layer: 6
-
-hidden_dim: 768
-output_dim: 8
-num_layers: 0

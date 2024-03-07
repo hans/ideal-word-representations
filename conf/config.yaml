@@ -1,8 +1,9 @@
 defaults:
   - _self_
   - dataset: timit_syllables
-  - equivalence: word_prefix
-  - model: w2v2_drop6_nornn
+  - equivalence: phoneme
+  - base_model: w2v2_6
+  - model: rnn_8
 
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog

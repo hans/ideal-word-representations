@@ -85,6 +85,22 @@ rule preprocess_timit:
         """
 
 
+rule extract_hidden_states:
+    input:
+        timit_data = "outputs/preprocessed_data/timit"
+
+    output:
+        "outputs/hidden_states/timit/{base_model_name}"
+
+    shell:
+        """
+        export PYTHONPATH=`pwd`
+        python scripts/extract_hidden_states.py \
+            base_model={wildcards.base_model_name} \
+            dataset.processed_data_dir={input.timit_data}
+        """
+
+
 rule run:
     output:
         full_trace = directory("outputs/models/{model_name}/{equivalence_classer}")
