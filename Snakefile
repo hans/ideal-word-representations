@@ -78,10 +78,11 @@ rule preprocess_timit:
     shell:
         """
         papermill --log-output notebooks/preprocessing/timit.ipynb \
-            {outputs.notebook_path} \
+            {output.notebook_path} \
             -p base_dir {workflow.basedir} \
             -p dataset_path {input.timit_raw} \
-            -p out_path {output.data_path}"
+            -p out_path {output.data_path}
+        """
 
 
 rule run:
