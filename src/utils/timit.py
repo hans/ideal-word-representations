@@ -52,8 +52,12 @@ TIMIT_JOINS = {
     # join glottal stop with following vowel
     "q": "^(iy|ih|eh|ey|ae|aa|aw|ay|ah|ao|oy|ow|uh|uw|ux|er|ax|ix|axr|ax-h)$",
 
+    # these can precede both stops and affricates
+    "dcl": "^jh$",
+    "tcl": "^ch$",
+
     # join plosive closure with release
-    **{f"{k}cl": f"^{k}$" for k in ['b', 'd', 'g', 'k', 'p', 't']}
+    **{f"{k}cl": f"^{k}$" for k in ['b', 'g', 'k', 'p']},
 }
 
 
