@@ -53,8 +53,8 @@ TIMIT_JOINS = {
     "q": "^(iy|ih|eh|ey|ae|aa|aw|ay|ah|ao|oy|ow|uh|uw|ux|er|ax|ix|axr|ax-h)$",
 
     # these can precede both stops and affricates
-    "dcl": "^jh$",
-    "tcl": "^ch$",
+    "dcl": "^(d|jh)$",
+    "tcl": "^(t|ch)$",
 
     # join plosive closure with release
     **{f"{k}cl": f"^{k}$" for k in ['b', 'g', 'k', 'p']},
