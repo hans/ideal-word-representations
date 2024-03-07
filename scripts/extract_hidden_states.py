@@ -7,6 +7,7 @@ import transformers
 
 from beartype import beartype
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
@@ -69,7 +70,7 @@ def main(config: DictConfig):
     hidden_state_dataset = extract_hidden_states(
         dataset, model, processor, config.base_model.layer)
     
-    with open("hidden_states.pkl", "wb") as f:
+    with open(Path(HydraConfig.get().runtime.output_dir) / "hidden_states.pkl", "wb") as f:
         torch.save(hidden_state_dataset, f)
 
 

@@ -87,17 +87,34 @@ rule preprocess_timit:
 
 rule extract_hidden_states:
     input:
-        timit_data = "outputs/preprocessed_data/timit"
+        "outputs/preprocessed_data/{dataset}"
 
     output:
-        "outputs/hidden_states/timit/{base_model_name}"
+        "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
+
+    run:
+        outdir = Path(output[0]).parent
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        python scripts/extract_hidden_states.py \
+            hydra.run.dir={outdir} \
+            base_model={wildcards.base_model_name} \
+            dataset.processed_data_dir={input}
+        """)
+
+
+rule prepare_equivalence_dataset:
+    input:
+        timit_data = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}"
+
+    output:
+        "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}"
 
     shell:
         """
-        export PYTHONPATH=`pwd`
-        python scripts/extract_hidden_states.py \
-            base_model={wildcards.base_model_name} \
-            dataset.processed_data_dir={input.timit_data}
+        # TODO
         """
 
 
