@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import Optional
+
 from mne.decoding import ReceptiveField
 import numpy as np
 import pandas as pd
@@ -23,25 +26,32 @@ def trf_to_df(trf: ReceptiveField, output_names) -> pd.DataFrame:
     return pd.DataFrame(trf_df)
 
 
+@dataclass
+class CVTRFResult:
+    coefs: pd.DataFrame
+    scores: pd.DataFrame
+    predictions: Optional[np.ndarray] = None
+
+
 def estimate_trf_cv(X, y, output_names, n_splits=5,
-                    return_scores=False, **kwargs):
+                    return_predictions=False, **kwargs) -> CVTRFResult:
     # K-fold estimation over contiguous sections of the data
     kf = KFold(n_splits=n_splits, shuffle=False)
 
     trf = ReceptiveField(**kwargs)
-    coefs, scores = [], []
+    coefs, scores, predictions = [], [], []
 
     for train_idx, test_idx in kf.split(X):
         trf.fit(X[train_idx], y[train_idx])
         coefs.append(trf_to_df(trf, output_names))
+        scores.append(trf.score(X[test_idx], y[test_idx]))
 
-        if return_scores:
-            scores.append(trf.score(X[test_idx], y[test_idx]))
+        if return_predictions:
+            predictions.append(trf.predict(X[test_idx]))
 
     coef_df = pd.concat(coefs, names=["fold"], keys=list(range(n_splits))).reset_index()
-    if return_scores:
-        scores_df = pd.DataFrame(np.array(scores), columns=output_names,
-                                 index=pd.Index(range(n_splits), name="fold"))
-        return coef_df, scores_df
-    else:
-        return coef_df
+    scores_df = pd.DataFrame(np.array(scores), columns=output_names,
+                             index=pd.Index(range(n_splits), name="fold"))
+
+    return CVTRFResult(coefs=coef_df, scores=scores_df,
+                       predictions=np.concatenate(predictions) if return_predictions else None)
