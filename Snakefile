@@ -214,10 +214,42 @@ rule run_all:
         expand("outputs/models/{model_spec}", model_spec=MODEL_SPEC_LIST)
 
 
+rule extract_embeddings:
+    input:
+        model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
+
+    output:
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
+
+    run:
+        outdir = Path(embeddings).parent
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        python scripts/extract_model_embeddings.py \
+            hydra.run.dir={outdir} \
+            model={wildcards.model_name} \
+            +model.output_dir={input.model_dir} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
+            equivalence={wildcards.equivalence_classer} \
+            +equivalence.path={input.equivalence_dataset}
+        """)
+
+
+
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",
-        model_dir = "outputs/models/{model_name}/{equivalence_classer}"
+        model_dir = "outputs/models/{model_name}/{equivalence_classer}",
+
+        dataset = "outputs/preprocessed_data/{dataset}",
+        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
+
     output:
         outdir = directory("outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}"),
         notebook = "outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}/{notebook}.ipynb"
@@ -227,7 +259,11 @@ rule run_notebook:
         papermill --log-output \
             {input.notebook} {output.notebook} \
             -p model_dir {input.model_dir} \
-            -p output_dir {output.outdir}
+            -p output_dir {output.outdir} \
+            -p dataset_path {input.dataset} \
+            -p equivalence_path {input.equivalence_dataset} \
+            -p hidden_states_path {input.hidden_states} \
+            -p embeddings_path {input.embeddings}
         """
 
 
