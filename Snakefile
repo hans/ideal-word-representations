@@ -105,6 +105,12 @@ rule extract_hidden_states:
         dataset = "outputs/preprocessed_data/{dataset}",
         base_model_config = "conf/base_model/{base_model_name}.yaml"
 
+    resources:
+        gpu = 1
+
+    params:
+        gpu_device = select_gpu_device
+
     output:
         "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
 
@@ -113,6 +119,7 @@ rule extract_hidden_states:
 
         shell("""
         export PYTHONPATH=`pwd`
+        export CUDA_VISIBLE_DEVICES={params.gpu_device}
         python scripts/extract_hidden_states.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
