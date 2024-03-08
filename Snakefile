@@ -107,15 +107,23 @@ rule extract_hidden_states:
 rule prepare_equivalence_dataset:
     input:
         timit_data = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}"
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
 
     output:
-        "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}"
+        "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
-    shell:
-        """
-        # TODO
-        """
+    run:
+        outdir = Path(output[0]).parent
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        python scripts/make_equivalence_dataset.py \
+            hydra.run.dir={outdir} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
+            equivalence={wildcards.equivalence_classer} \
+            dataset.processed_data_dir={input.timit_data}
+        """)
 
 
 rule run:

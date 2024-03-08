@@ -1,4 +1,5 @@
-_target_: src.datasets.speech_equivalence.load_or_make_timit_equivalence_dataset
+_target_: src.datasets.speech_equivalence.make_timit_equivalence_dataset
 
-equivalence_classer: phoneme
+name: next_phoneme
+equivalence_classer: next_phoneme
 num_frames_per_phoneme: 1

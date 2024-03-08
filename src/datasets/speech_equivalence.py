@@ -54,7 +54,6 @@ start_references = {
 }
 
 
-@beartype
 @dataclass
 class SpeechHiddenStateDataset:
     model_name: str
@@ -164,7 +163,6 @@ class SpeechEquivalenceDataset:
 def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
                                    hidden_states: SpeechHiddenStateDataset,
-                                   model: transformers.PreTrainedModel,
                                    equivalence_classer: str,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
@@ -275,29 +273,3 @@ def make_timit_equivalence_dataset(name: str,
                                     Q=Q,
                                     S=S,
                                     class_labels=class_labels)
-
-
-def load_or_make_timit_equivalence_dataset(
-    name: str,
-    dataset: datasets.Dataset,
-    model: transformers.PreTrainedModel,
-    processor: transformers.Wav2Vec2Processor,
-    layer: int,
-    equivalence_classer: str,
-    num_frames_per_phoneme=None,
-    force_recompute=False
-) -> SpeechEquivalenceDataset:
-    """
-    Load or compute a TIMIT equivalence dataset, and cache it to disk.
-    """
-    cache_path = f"data/timit_equivalence_{name}.pkl"
-    if os.path.exists(cache_path) and not force_recompute:
-        with open(cache_path, "rb") as f:
-            return pickle.load(f)
-    else:
-        result = make_timit_equivalence_dataset(
-            name, dataset, model, processor, layer,
-            equivalence_classer, num_frames_per_phoneme)
-        with open(cache_path, "wb") as f:
-            pickle.dump(result, f)
-        return result

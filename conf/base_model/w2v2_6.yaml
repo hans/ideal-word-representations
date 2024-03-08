@@ -1,2 +1,3 @@
+name: w2v2_6
 model_ref: facebook/wav2vec2-base
 layer: 6
