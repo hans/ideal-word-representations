@@ -18,18 +18,19 @@ L = logging.getLogger(__name__)
 
 def make_model_init(config, device="cpu"):
     def model_init(trial):
-        return integrator.ContrastiveEmbeddingModel(config).to(device)
+        return integrator.ContrastiveEmbeddingModel(config).to(device)  # type: ignore
     return model_init
 
 
-def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset) -> tuple[datasets.Dataset, int]:
+def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                        hidden_state_dataset: SpeechHiddenStateDataset) -> tuple[datasets.Dataset, int]:
     # Pick a max length that accommodates the majority of the samples,
     # excluding outlier lengths
     evident_lengths = equiv_dataset.lengths
     evident_lengths = evident_lengths[evident_lengths != -1]
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
-    return integrator.prepare_dataset(equiv_dataset, target_length), target_length
+    return integrator.prepare_dataset(equiv_dataset, hidden_state_dataset, target_length), target_length
 
 
 def train(config: DictConfig):
@@ -38,7 +39,7 @@ def train(config: DictConfig):
             L.error("CUDA is not available. Falling back to CPU.")
             config.device = "cpu"
     dataset = datasets.load_from_disk(config.dataset.processed_data_dir)
-    assert isinstance(dataset, datasets.Dataset), "should be a Dataset, not be a DatasetDict"
+    assert not isinstance(dataset, datasets.DatasetDict), "should be a Dataset, not be a DatasetDict"
 
     with open(config.base_model.hidden_state_path, "rb") as f:
         hidden_state_dataset: SpeechHiddenStateDataset = torch.load(f)
@@ -49,7 +50,7 @@ def train(config: DictConfig):
     # Prepare negative-sampling dataset
     if config.trainer.do_train:
         dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
-        neg_dataset, max_length = prepare_neg_dataset(equiv_dataset)
+        neg_dataset, max_length = prepare_neg_dataset(equiv_dataset, hidden_state_dataset)
         neg_dataset_split = neg_dataset.train_test_split(test_size=0.1, shuffle=True)
         neg_dataset_split.save_to_disk(dataset_path)
 

@@ -108,18 +108,16 @@ rule extract_hidden_states:
     resources:
         gpu = 1
 
-    params:
-        gpu_device = select_gpu_device
-
     output:
         "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
 
     run:
         outdir = Path(output[0]).parent
+        gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""
         export PYTHONPATH=`pwd`
-        export CUDA_VISIBLE_DEVICES={params.gpu_device}
+        export CUDA_VISIBLE_DEVICES={gpu_device}
         python scripts/extract_hidden_states.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
@@ -163,15 +161,14 @@ rule run:
     resources:
         gpu = 1
 
-    params:
-        gpu_device = select_gpu_device
-
     output:
         full_trace = directory("outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}")
 
-    shell:
-        """
-        export CUDA_VISIBLE_DEVICES={params.gpu_device}
+    run:
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
             dataset.processed_data_dir={input.dataset} \
@@ -180,7 +177,7 @@ rule run:
             model={wildcards.model_name} \
             equivalence={wildcards.equivalence_classer} \
             +equivalence.path={input.equivalence_dataset}
-        """
+        """)
 
 
 # Run train without actually training -- used to generate random model weights
@@ -190,6 +187,8 @@ rule run_no_train:
         equivalence_config = "conf/equivalence/phoneme.yaml",
         model_config = "conf/model/random{model_name}.yaml",
 
+        dataset = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/phoneme/equivalence.pkl"
 
     output:
@@ -199,7 +198,10 @@ rule run_no_train:
         """
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
+            dataset.processed_data_dir={input.dataset} \
             model=random{wildcards.model_name} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
             equivalence=phoneme \
             +equivalence.path={input.equivalence_dataset} \
             trainer.do_train=false

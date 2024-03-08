@@ -122,9 +122,9 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def is_compatible_with(self, dataset: SpeechEquivalenceDataset):
-        return self.base_model_ref == dataset.hidden_state_dataset.model_name and \
-                self.input_dim == dataset.hidden_state_dataset.hidden_size
+    def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
+        return self.base_model_ref == dataset.model_name and \
+               self.input_dim == dataset.hidden_size
 
 
 class ContrastiveEmbeddingModel(PreTrainedModel):
@@ -138,7 +138,7 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                             config.hidden_dim,
                             config.output_dim)
         
-    def is_compatible_with(self, dataset: SpeechEquivalenceDataset):
+    def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
         return self.config.is_compatible_with(dataset)
 
     def forward(self, example, example_length, pos, pos_length, neg, neg_length,
@@ -201,7 +201,9 @@ def get_sequence(F, start_index, end_index, max_length):
     return sequence
 
 
-def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
+def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                    hidden_state_dataset: SpeechHiddenStateDataset,
+                    max_length: int,
                     num_examples: Optional[int] = None,
                     layer: Optional[int] = None) -> Dataset:
     """
@@ -210,17 +212,17 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
     If `num_examples` is specified, dataset will be subsampled. Sampling will
     be fully random, without stratification by equivalence class.
     """
-    if layer is None and dataset.hidden_state_dataset.num_layers > 1:
+    if layer is None and hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
-    F = dataset.hidden_state_dataset.get_layer(layer if layer is not None else 0)
+    F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
 
     ret = []
     
-    lengths = torch.minimum(dataset.lengths, torch.tensor(max_length))
+    lengths = torch.minimum(equiv_dataset.lengths, torch.tensor(max_length))
     # TODO this is just a hack
     lengths[lengths == 0] = 1
 
-    non_null_frames = (dataset.Q != -1).nonzero(as_tuple=True)[0]
+    non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
 
     if num_examples is not None:
         non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
@@ -229,8 +231,8 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
         if lengths[i] == -1:
             continue
 
-        pos_indices = (dataset.Q == dataset.Q[i]).nonzero(as_tuple=True)[0]
-        neg_indices = ((dataset.Q != -1) & (dataset.Q != dataset.Q[i])).nonzero(as_tuple=True)[0]
+        pos_indices = (equiv_dataset.Q == equiv_dataset.Q[i]).nonzero(as_tuple=True)[0]
+        neg_indices = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != equiv_dataset.Q[i])).nonzero(as_tuple=True)[0]
 
         if len(pos_indices) > 1 and len(neg_indices) > 0:
             pos_indices = pos_indices[pos_indices != i]
@@ -241,13 +243,13 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
             # per example, especially in sparser Q cases.
 
             # Extract sequences
-            example_seq = get_sequence(F, dataset.S[i], i, max_length)
-            pos_seq = get_sequence(F, dataset.S[pos_idx], pos_idx, max_length)
-            neg_seq = get_sequence(F, dataset.S[neg_idx], neg_idx, max_length)
+            example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length)
+            pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length)
+            neg_seq = get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
 
-            ret.append((example_seq, i, dataset.Q[i], lengths[i],
-                        pos_seq, pos_idx, dataset.Q[pos_idx], lengths[pos_idx],
-                        neg_seq, neg_idx, dataset.Q[neg_idx], lengths[neg_idx]))
+            ret.append((example_seq, i, equiv_dataset.Q[i], lengths[i],
+                        pos_seq, pos_idx, equiv_dataset.Q[pos_idx], lengths[pos_idx],
+                        neg_seq, neg_idx, equiv_dataset.Q[neg_idx], lengths[neg_idx]))
 
     ret = Dataset.from_dict({
         "example": [x[0] for x in ret],
@@ -267,25 +269,26 @@ def prepare_dataset(dataset: SpeechEquivalenceDataset, max_length: int,
     }).with_format("torch")
 
     # Sanity checks
-    assert (ret["example_length"] > 0).all()
-    assert (ret["pos_length"] > 0).all()
-    assert (ret["neg_length"] > 0).all()
-    assert (ret["example_class"] != -1).all()
-    assert (ret["pos_class"] != -1).all()
-    assert (ret["neg_class"] != -1).all()
+    assert (ret["example_length"] > 0).all()  # type: ignore
+    assert (ret["pos_length"] > 0).all()  # type: ignore
+    assert (ret["neg_length"] > 0).all()  # type: ignore
+    assert (ret["example_class"] != -1).all()  # type: ignore
+    assert (ret["pos_class"] != -1).all()  # type: ignore
+    assert (ret["neg_class"] != -1).all()  # type: ignore
 
     return ret
 
 
 def compute_embeddings(model: ContrastiveEmbeddingModel,
-                       dataset: SpeechEquivalenceDataset,
+                       equiv_dataset: SpeechEquivalenceDataset,
+                       hidden_state_dataset: SpeechHiddenStateDataset,
                        batch_size=16,
                        device=None) -> torch.Tensor:
     """
     Compute integrator embeddings for a given model on a speech
     equivalence classing dataset.
     """
-    assert model.is_compatible_with(dataset)
+    assert model.is_compatible_with(hidden_state_dataset)
     if device is not None:
         model = model.to(device)
     device = model.device
@@ -295,16 +298,16 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
     batch_size = 16
     # TODO this is a hack -- better to have the dataset explicitly represent what
     # layers it retains after subsetting
-    if dataset.hidden_state_dataset.num_layers > 1:
-        F = dataset.hidden_state_dataset.get_layer(model.config.base_model_layer)
+    if hidden_state_dataset.num_layers > 1:
+        F = hidden_state_dataset.get_layer(model.config.base_model_layer)
     else:
-        F = dataset.hidden_state_dataset.get_layer(0)
-    for batch_start in trange(0, dataset.hidden_state_dataset.num_frames, batch_size):
-        batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, dataset.hidden_state_dataset.num_frames))
-        batch = torch.stack([get_sequence(F, dataset.S[idx], idx, model.config.max_length)
+        F = hidden_state_dataset.get_layer(0)
+    for batch_start in trange(0, hidden_state_dataset.num_frames, batch_size):
+        batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, hidden_state_dataset.num_frames))
+        batch = torch.stack([get_sequence(F, equiv_dataset.S[idx], idx, model.config.max_length)
                             for idx in batch_idxs])
         
-        lengths = torch.minimum(dataset.lengths[batch_idxs], torch.tensor(model.config.max_length))
+        lengths = torch.minimum(equiv_dataset.lengths[batch_idxs], torch.tensor(model.config.max_length))
         # HACK
         lengths[lengths <= 0] = 1
 
