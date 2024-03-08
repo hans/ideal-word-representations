@@ -23,14 +23,18 @@ def make_model_init(config, device="cpu"):
 
 
 def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
-                        hidden_state_dataset: SpeechHiddenStateDataset) -> tuple[datasets.Dataset, int]:
+                        hidden_state_dataset: SpeechHiddenStateDataset, **kwargs
+                        ) -> tuple[int, datasets.IterableDataset, datasets.IterableDataset, int]:
     # Pick a max length that accommodates the majority of the samples,
     # excluding outlier lengths
     evident_lengths = equiv_dataset.lengths
     evident_lengths = evident_lengths[evident_lengths != -1]
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
-    return integrator.prepare_dataset(equiv_dataset, hidden_state_dataset, target_length), target_length
+    num_examples, train_dataset, eval_dataset = integrator.prepare_dataset(
+        equiv_dataset, hidden_state_dataset, target_length, **kwargs)
+
+    return num_examples, train_dataset, eval_dataset, target_length
 
 
 def train(config: DictConfig):
@@ -49,16 +53,16 @@ def train(config: DictConfig):
 
     # Prepare negative-sampling dataset
     if config.trainer.do_train:
-        dataset_path = Path(HydraConfig.get().runtime.output_dir) / "neg_dataset"
-        neg_dataset, max_length = prepare_neg_dataset(equiv_dataset, hidden_state_dataset)
-        neg_dataset_split = neg_dataset.train_test_split(test_size=0.1, shuffle=True)
-        neg_dataset_split.save_to_disk(dataset_path)
-
-        train_dataset = neg_dataset_split["train"]
-        eval_dataset = neg_dataset_split["test"]
+        total_num_examples, train_dataset, eval_dataset, max_length = prepare_neg_dataset(
+            equiv_dataset, hidden_state_dataset)
+        
+        train_dataset = train_dataset.with_format("torch")
+        eval_dataset = eval_dataset.with_format("torch")
     else:
+        total_num_examples = 0
         train_dataset, eval_dataset = None, None
         max_length = equiv_dataset.lengths.max().item()
+    max_training_steps = config.training_args.num_train_epochs * total_num_examples
 
     model_config = integrator.ContrastiveEmbeddingModelConfig(
         equivalence_classer=config.equivalence.equivalence_classer,
@@ -75,6 +79,7 @@ def train(config: DictConfig):
     training_args = transformers.TrainingArguments(
         output_dir=HydraConfig.get().runtime.output_dir,
         logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
+        max_steps=max_training_steps,
         **OmegaConf.to_object(config.training_args))
 
     callbacks = []

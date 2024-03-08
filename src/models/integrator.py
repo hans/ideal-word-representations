@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 import random
-from typing import Optional
+from typing import Optional, Iterator
 
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 import numpy as np
 from scipy.spatial.distance import cdist, pdist
 import torch
@@ -89,11 +89,11 @@ class ContrastiveEmbeddingObjective(nn.Module):
 
 @dataclass
 class ContrastiveEmbeddingModelOutput(ModelOutput):
-    loss: torch.FloatTensor = None
+    loss: torch.Tensor
 
-    embeddings: torch.FloatTensor = None
-    embeddings_hard_positive: torch.FloatTensor = None
-    embeddings_hard_negative: torch.FloatTensor = None
+    embeddings: Optional[torch.Tensor] = None
+    embeddings_hard_positive: Optional[torch.Tensor] = None
+    embeddings_hard_negative: Optional[torch.Tensor] = None
 
 
 @dataclass
@@ -201,82 +201,100 @@ def get_sequence(F, start_index, end_index, max_length):
     return sequence
 
 
-def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
-                    hidden_state_dataset: SpeechHiddenStateDataset,
-                    max_length: int,
-                    num_examples: Optional[int] = None,
-                    layer: Optional[int] = None) -> Dataset:
-    """
-    Prepare a negative-sampling dataset for contrastive embedding learning.
-
-    If `num_examples` is specified, dataset will be subsampled. Sampling will
-    be fully random, without stratification by equivalence class.
-    """
+def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                 hidden_state_dataset: SpeechHiddenStateDataset,
+                 max_length: int,
+                 num_examples: Optional[int] = None,
+                 layer: Optional[int] = None,
+                 select_idxs: Optional[list[int]] = None) -> Iterator[dict]:
     if layer is None and hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
-
-    ret = []
     
     lengths = torch.minimum(equiv_dataset.lengths, torch.tensor(max_length))
-    # TODO this is just a hack
+    # TODO understand why we have zero-length examples
     lengths[lengths == 0] = 1
 
-    non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
+    if select_idxs is not None:
+        assert (equiv_dataset.Q[select_idxs] != -1).all()
+        non_null_frames = torch.tensor(select_idxs)
+    else:
+        non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
+        if num_examples is not None:
+            non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
 
-    if num_examples is not None:
-        non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
+    # infinite generation
+    while True:
+        for i in non_null_frames:
+            if lengths[i] == -1:
+                continue
 
-    for i in tqdm(non_null_frames):
-        if lengths[i] == -1:
-            continue
+            pos_indices = (equiv_dataset.Q == equiv_dataset.Q[i]).nonzero(as_tuple=True)[0]
+            neg_indices = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != equiv_dataset.Q[i])).nonzero(as_tuple=True)[0]
 
-        pos_indices = (equiv_dataset.Q == equiv_dataset.Q[i]).nonzero(as_tuple=True)[0]
-        neg_indices = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != equiv_dataset.Q[i])).nonzero(as_tuple=True)[0]
+            if len(pos_indices) > 1 and len(neg_indices) > 0:
+                pos_indices = pos_indices[pos_indices != i]
+                pos_idx = random.choice(pos_indices)
+                neg_idx = random.choice(neg_indices)
 
-        if len(pos_indices) > 1 and len(neg_indices) > 0:
-            pos_indices = pos_indices[pos_indices != i]
-            pos_idx = random.choice(pos_indices)
-            neg_idx = random.choice(neg_indices)
+                # Extract sequences
+                example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length)
+                pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length)
+                neg_seq = get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
 
-            # TODO ideally we'd have multiple positive/negative examples
-            # per example, especially in sparser Q cases.
+                # Sanity chcks
+                assert lengths[i] > 0
+                assert lengths[pos_idx] > 0
+                assert lengths[neg_idx] > 0
+                assert equiv_dataset.Q[i] != -1
+                assert equiv_dataset.Q[pos_idx] != -1
+                assert equiv_dataset.Q[neg_idx] != -1
 
-            # Extract sequences
-            example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length)
-            pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length)
-            neg_seq = get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
+                yield {
+                    "example": example_seq,
+                    "example_idx": i,
+                    "example_class": equiv_dataset.Q[i],
+                    "example_length": lengths[i],
 
-            ret.append((example_seq, i, equiv_dataset.Q[i], lengths[i],
-                        pos_seq, pos_idx, equiv_dataset.Q[pos_idx], lengths[pos_idx],
-                        neg_seq, neg_idx, equiv_dataset.Q[neg_idx], lengths[neg_idx]))
+                    "pos": pos_seq,
+                    "pos_idx": pos_idx,
+                    "pos_class": equiv_dataset.Q[pos_idx],
+                    "pos_length": lengths[pos_idx],
 
-    ret = Dataset.from_dict({
-        "example": [x[0] for x in ret],
-        "example_idx": [x[1] for x in ret],
-        "example_class": [x[2] for x in ret],
-        "example_length": [x[3] for x in ret],
+                    "neg": neg_seq,
+                    "neg_idx": neg_idx,
+                    "neg_class": equiv_dataset.Q[neg_idx],
+                    "neg_length": lengths[neg_idx],
+                }
 
-        "pos": [x[4] for x in ret],
-        "pos_idx": [x[5] for x in ret],
-        "pos_class": [x[6] for x in ret],
-        "pos_length": [x[7] for x in ret],
 
-        "neg": [x[8] for x in ret],
-        "neg_idx": [x[9] for x in ret],
-        "neg_class": [x[10] for x in ret],
-        "neg_length": [x[11] for x in ret],
-    }).with_format("torch")
+def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                    hidden_state_dataset: SpeechHiddenStateDataset,
+                    max_length: int,
+                    layer: Optional[int] = None, **kwargs) -> tuple[int, IterableDataset, IterableDataset]:
+    """
+    Prepare a negative-sampling dataset for contrastive embedding learning.
 
-    # Sanity checks
-    assert (ret["example_length"] > 0).all()  # type: ignore
-    assert (ret["pos_length"] > 0).all()  # type: ignore
-    assert (ret["neg_length"] > 0).all()  # type: ignore
-    assert (ret["example_class"] != -1).all()  # type: ignore
-    assert (ret["pos_class"] != -1).all()  # type: ignore
-    assert (ret["neg_class"] != -1).all()  # type: ignore
+    Returns train and test split datasets.
+    """
 
-    return ret
+    all_idxs = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0].numpy()
+    all_idxs = np.random.permutation(all_idxs)
+    
+    train_idxs, test_idxs = all_idxs[:int(0.9 * len(all_idxs))], all_idxs[int(0.9 * len(all_idxs)):]
+
+    dataset_kwargs = {
+        "equiv_dataset": equiv_dataset,
+        "hidden_state_dataset": hidden_state_dataset,
+        "max_length": max_length,
+        "layer": layer,
+        **kwargs
+    }
+
+    train_dataset = IterableDataset.from_generator(iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": train_idxs})
+    test_dataset = IterableDataset.from_generator(iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": test_idxs})
+
+    return len(all_idxs), train_dataset, test_dataset
 
 
 def compute_embeddings(model: ContrastiveEmbeddingModel,
