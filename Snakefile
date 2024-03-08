@@ -27,6 +27,21 @@ ALL_MODEL_NOTEBOOKS = [
 ALL_ENCODING_SUBJECTS = [data_spec['subject'] for data_spec in config["encoding"]["data"]]
 
 
+def select_gpu_device(wildcards, resources):
+    if resources.gpu == 0:
+        return None
+    import GPUtil
+    available_l = GPUtil.getAvailable(order = 'random', limit = resources.gpu, maxLoad = 0.5, maxMemory = 0.5, includeNan=False, excludeID=[], excludeUUID=[])
+    available_str = ",".join([str(x) for x in available_l])
+
+    if len(available_l) == 0 and resources.gpu > 0:
+        raise Exception("select_gpu_device did not select any GPUs")
+    elif len(available_l) < resources.gpu:
+        sys.stderr.write("[WARN] select_gpu_device selected fewer GPU devices than requested")
+    print("Assigning %d available GPU devices: %s" % (resources.gpu, available_str))
+    return available_str
+
+
 def hydra_param(obj):
     """
     Prepare the given object for use as a Hydra CLI / YAML override.
@@ -87,7 +102,8 @@ rule preprocess_timit:
 
 rule extract_hidden_states:
     input:
-        "outputs/preprocessed_data/{dataset}"
+        dataset = "outputs/preprocessed_data/{dataset}",
+        base_model_config = "conf/base_model/{base_model_name}.yaml"
 
     output:
         "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
@@ -100,14 +116,15 @@ rule extract_hidden_states:
         python scripts/extract_hidden_states.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
-            dataset.processed_data_dir={input}
+            dataset.processed_data_dir={input.dataset}
         """)
 
 
 rule prepare_equivalence_dataset:
     input:
         timit_data = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        equivalence_config = "conf/equivalence/{equivalence_classer}.yaml"
 
     output:
         "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
@@ -127,22 +144,49 @@ rule prepare_equivalence_dataset:
 
 
 rule run:
+    input:
+        base_model_config = "conf/base_model/{base_model_name}.yaml",
+        equivalence_config = "conf/equivalence/{equivalence_classer}.yaml",
+        model_config = "conf/model/{model_name}.yaml",
+
+        dataset = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
+
+    resources:
+        gpu = 1
+
+    params:
+        gpu_device = select_gpu_device
+
     output:
-        full_trace = directory("outputs/models/{model_name}/{equivalence_classer}")
+        full_trace = directory("outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}")
 
     shell:
         """
+        export CUDA_VISIBLE_DEVICES={params.gpu_device}
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
+            dataset.processed_data_dir={input.dataset} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
             model={wildcards.model_name} \
             equivalence={wildcards.equivalence_classer} \
+            +equivalence.path={input.equivalence_dataset}
         """
 
 
 # Run train without actually training -- used to generate random model weights
 rule run_no_train:
+    input:
+        base_model_config = "conf/base_model/{base_model_name}.yaml",
+        equivalence_config = "conf/equivalence/phoneme.yaml",
+        model_config = "conf/model/random{model_name}.yaml",
+
+        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/phoneme/equivalence.pkl"
+
     output:
-        full_trace = directory("outputs/models/random{model_name}/random")
+        full_trace = directory("outputs/models/{dataset}/{base_model_name}/random{model_name}/random")
 
     shell:
         """
@@ -150,11 +194,12 @@ rule run_no_train:
             hydra.run.dir={output.full_trace} \
             model=random{wildcards.model_name} \
             equivalence=phoneme \
+            +equivalence.path={input.equivalence_dataset} \
             trainer.do_train=false
         """
 
 
-MODEL_SPEC_LIST = [f"{m['model']}/{m['equivalence']}" for m in config["models"]]
+MODEL_SPEC_LIST = [f"{m['dataset']}/{m['base_model']}/{m['model']}/{m['equivalence']}" for m in config["models"]]
 rule run_all:
     input:
         expand("outputs/models/{model_spec}", model_spec=MODEL_SPEC_LIST)

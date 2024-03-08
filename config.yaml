@@ -4,41 +4,69 @@ datasets:
 
 
 models:
-  - model: w2v2_6_3
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_3
     equivalence: phoneme
 
-  - model: w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: phoneme
-  - model: w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: syllable
-  - model: w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: next_phoneme
-  - model: w2v2_6_8
-    equivalence: phoneme_within_word_prefix
-  - model: w2v2_6_8
-    equivalence: phoneme_within_word_suffix
-  - model: w2v2_6_8
+  # - base_model: w2v2_6
+  #   dataset: timit
+  #   model: rnn_8
+  #   equivalence: phoneme_within_word_prefix
+  # - base_model: w2v2_6
+  #   dataset: timit
+  #   model: rnn_8
+  #   equivalence: phoneme_within_word_suffix
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: word
-  - model: w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: biphone_recon
-  - model: w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8
     equivalence: biphone_pred
 
-  - model: w2v2_6_32
-    equivalence: phoneme_within_word_prefix
-  - model: w2v2_6_32
-    equivalence: phoneme_within_word_suffix
+  # - base_model: w2v2_6
+  #   model: rnn_32
+  #   equivalence: phoneme_within_word_prefix
+  # - base_model: w2v2_6
+  #   model: rnn_32
+  #   equivalence: phoneme_within_word_suffix
 
   # random LSTM models
-  - model: random_w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: randomrnn_8
     equivalence: random
-  - model: random_w2v2_6_32
+  - base_model: w2v2_6
+    dataset: timit
+    model: randomrnn_32
     equivalence: random
 
   # random feedforward models
-  - model: randomff_w2v2_6_8
+  - base_model: w2v2_6
+    dataset: timit
+    model: randomff_8
     equivalence: random
-  - model: randomff_w2v2_6_32
+  - base_model: w2v2_6
+    dataset: timit
+    model: randomff_32
     equivalence: random
 
 # TODO need more than one block. Expect to see r =~ 0.6

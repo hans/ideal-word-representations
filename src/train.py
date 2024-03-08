@@ -1,7 +1,7 @@
 import logging 
 from pathlib import Path
 
-from datasets import Dataset, DatasetDict
+import datasets
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
@@ -10,10 +10,8 @@ from sklearn.metrics import roc_curve, roc_auc_score
 import torch
 import transformers
 
-from src.datasets.speech_equivalence import SpeechEquivalenceDataset, load_or_make_timit_equivalence_dataset
+from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.models import integrator
-from src.models.transformer import prepare_processor
-from src.utils.timit import load_or_prepare_timit_corpus
 
 L = logging.getLogger(__name__)
 
@@ -24,27 +22,7 @@ def make_model_init(config, device="cpu"):
     return model_init
 
 
-# def compute_classifier_metrics(p: transformers.EvalPrediction) -> dict:
-#     assert isinstance(p.predictions, tuple)
-#     preds = p.predictions[0]
-#     label_mask, labels, _ = p.label_ids
-
-#     def evaluate_label(j):
-#         preds_j = preds[:, :, j]
-#         labels_j = labels[:, :, j]
-
-#         preds_j = preds_j[label_mask == 1]
-#         labels_j = labels_j[label_mask == 1]
-#         if labels_j.std() == 0:
-#             # Only one class. Quit
-#             return None
-#         return roc_auc_score(labels_j, preds_j)
-
-#     roc_auc_scores = [evaluate_label(j) for j in range(preds.shape[-1])]
-#     return {"roc_auc": np.mean([score for score in roc_auc_scores if score is not None])}
-
-
-def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset) -> tuple[Dataset, int]:
+def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset) -> tuple[datasets.Dataset, int]:
     # Pick a max length that accommodates the majority of the samples,
     # excluding outlier lengths
     evident_lengths = equiv_dataset.lengths
@@ -59,26 +37,14 @@ def train(config: DictConfig):
         if not torch.cuda.is_available():
             L.error("CUDA is not available. Falling back to CPU.")
             config.device = "cpu"
+    dataset = datasets.load_from_disk(config.dataset.processed_data_dir)
+    assert isinstance(dataset, datasets.Dataset), "should be a Dataset, not be a DatasetDict"
 
-    processor = prepare_processor(config)
-    base_model = transformers.Wav2Vec2Model.from_pretrained(config.model.base_model_ref).to(config.device)
+    with open(config.base_model.hidden_state_path, "rb") as f:
+        hidden_state_dataset: SpeechHiddenStateDataset = torch.load(f)
 
-    # Prepare basic speech dataset
-    dataset = instantiate(config.dataset, processor=processor,
-                          _convert_="partial")
-    if isinstance(dataset, DatasetDict):
-        dataset = dataset["train"]
-
-    # Prepare equivalence-classing dataset
-    equiv_name = f"{config.model.base_model_ref}_{config.model.base_model_layer}-{config.equivalence.equivalence_classer}-{config.equivalence.num_frames_per_phoneme}"
-    equiv_name = equiv_name.replace("/", "-")
-    equiv_dataset = instantiate(
-        config.equivalence, _recursive_=False,
-        name=equiv_name,
-        dataset=dataset,
-        model=base_model,
-        processor=processor,
-        layer=config.model.base_model_layer)
+    with open(config.equivalence.path, "rb") as f:
+        equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
 
     # Prepare negative-sampling dataset
     if config.trainer.do_train:
@@ -96,7 +62,7 @@ def train(config: DictConfig):
     model_config = integrator.ContrastiveEmbeddingModelConfig(
         equivalence_classer=config.equivalence.equivalence_classer,
         max_length=max_length,
-        input_dim=equiv_dataset.hidden_state_dataset.hidden_size,
+        input_dim=hidden_state_dataset.hidden_size,
         **config.model)
     model_init = make_model_init(model_config, device=config.device)
     
