@@ -227,7 +227,7 @@ rule extract_embeddings:
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
 
     run:
-        outdir = Path(embeddings).parent
+        outdir = Path(output.embeddings).parent
         gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""

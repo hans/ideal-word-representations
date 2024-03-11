@@ -195,7 +195,7 @@ def get_sequence(F, start_index, end_index, max_length):
     # Pad on right if necessary
     if len(sequence) < max_length:
         pad_size = max_length - len(sequence)
-        padding = torch.zeros(pad_size, F.shape[1])
+        padding = torch.zeros(pad_size, F.shape[1]).to(F)
         sequence = torch.cat((sequence, padding), dim=0)
     
     return sequence
@@ -335,17 +335,21 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
         F = hidden_state_dataset.get_layer(model.config.base_model_layer)
     else:
         F = hidden_state_dataset.get_layer(0)
+    
+    F = F.to(device)
+    lengths = equiv_dataset.lengths.to(device)
+
     for batch_start in trange(0, hidden_state_dataset.num_frames, batch_size):
         batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, hidden_state_dataset.num_frames))
         batch = torch.stack([get_sequence(F, equiv_dataset.S[idx], idx, model.config.max_length)
-                            for idx in batch_idxs])
+                             for idx in batch_idxs])
         
-        lengths = torch.minimum(equiv_dataset.lengths[batch_idxs], torch.tensor(model.config.max_length))
+        lengths_batch = torch.minimum(lengths[batch_idxs], torch.tensor(model.config.max_length))
         # HACK
-        lengths[lengths <= 0] = 1
+        lengths_batch[lengths_batch <= 0] = 1
 
         with torch.no_grad():
-            model_representations.append(model.compute_embeddings(batch, lengths))
+            model_representations.append(model.compute_embeddings(batch, lengths_batch))
 
     return torch.cat(model_representations, dim=0)
 
