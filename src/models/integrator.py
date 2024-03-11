@@ -206,7 +206,8 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
                  max_length: int,
                  num_examples: Optional[int] = None,
                  layer: Optional[int] = None,
-                 select_idxs: Optional[list[int]] = None) -> Iterator[dict]:
+                 select_idxs: Optional[list[int]] = None,
+                 infinite=True) -> Iterator[dict]:
     if layer is None and hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
@@ -267,11 +268,14 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
                     "neg_length": lengths[neg_idx],
                 }
 
+        if not infinite:
+            break
+
 
 def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
                     hidden_state_dataset: SpeechHiddenStateDataset,
                     max_length: int,
-                    layer: Optional[int] = None, **kwargs) -> tuple[int, IterableDataset, IterableDataset]:
+                    layer: Optional[int] = None, **kwargs) -> tuple[int, IterableDataset, Dataset]:
     """
     Prepare a negative-sampling dataset for contrastive embedding learning.
 
@@ -291,8 +295,12 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
         **kwargs
     }
 
-    train_dataset = IterableDataset.from_generator(iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": train_idxs})
-    test_dataset = IterableDataset.from_generator(iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": test_idxs})
+    train_dataset = IterableDataset.from_generator(
+        iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": train_idxs,
+                                  "infinite": True})
+    test_dataset = Dataset.from_generator(
+        iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": test_idxs,
+                                  "infinite": False})
 
     return len(all_idxs), train_dataset, test_dataset
 
