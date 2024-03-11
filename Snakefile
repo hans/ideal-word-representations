@@ -220,14 +220,19 @@ rule extract_embeddings:
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
+    resources:
+        gpu = 1
+
     output:
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
 
     run:
         outdir = Path(embeddings).parent
+        gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""
         export PYTHONPATH=`pwd`
+        export CUDA_VISIBLE_DEVICES={gpu_device}
         python scripts/extract_model_embeddings.py \
             hydra.run.dir={outdir} \
             model={wildcards.model_name} \
