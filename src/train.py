@@ -93,6 +93,7 @@ def train(config: DictConfig):
         model=None, model_init=model_init,
         callbacks=callbacks,
         train_dataset=train_dataset, eval_dataset=eval_dataset,
+        compute_metrics=integrator.compute_metrics,
         **trainer_config)
 
     if do_train:
