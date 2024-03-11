@@ -224,14 +224,21 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
         if num_examples is not None:
             non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
 
+    # Pre-compute mapping from equivalence class to frame indices
+    equiv_class_to_idxs = {}
+    equiv_class_to_complement_idxs = {}
+    for idx in range(equiv_dataset.num_classes):
+        equiv_class_to_idxs[idx] = (equiv_dataset.Q == idx).nonzero(as_tuple=True)[0]
+        equiv_class_to_complement_idxs[idx] = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != idx)).nonzero(as_tuple=True)[0]
+
     # infinite generation
     while True:
         for i in non_null_frames:
             if lengths[i] == -1:
                 continue
 
-            pos_indices = (equiv_dataset.Q == equiv_dataset.Q[i]).nonzero(as_tuple=True)[0]
-            neg_indices = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != equiv_dataset.Q[i])).nonzero(as_tuple=True)[0]
+            pos_indices = equiv_class_to_idxs[equiv_dataset.Q[i].item()]
+            neg_indices = equiv_class_to_complement_idxs[equiv_dataset.Q[i].item()]
 
             if len(pos_indices) > 1 and len(neg_indices) > 0:
                 pos_indices = pos_indices[pos_indices != i]
