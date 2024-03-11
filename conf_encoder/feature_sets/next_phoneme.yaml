@@ -7,5 +7,7 @@ baseline_features:
   - aud
 
 model_features:
-  - model: w2v2_6_8/next_phoneme
+  - base_model: w2v2_6
+    model: rnn_8
+    equivalence: next_phoneme
     featurization: last_frame

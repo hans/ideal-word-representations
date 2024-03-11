@@ -7,5 +7,7 @@ baseline_features:
   - aud
 
 model_features:
-  - model: w2v2_6_8/syllable
+  - base_model: w2v2_6
+    model: rnn_8
+    equivalence: syllable
     featurization: last_frame

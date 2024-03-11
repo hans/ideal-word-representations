@@ -7,5 +7,7 @@ baseline_features:
   - aud
 
 model_features:
-  - model: random_w2v2_6_8/random
+  - base_model: w2v2_6
+    model: randomrnn_8
+    equivalence: random
     featurization: last_frame
