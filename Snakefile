@@ -147,6 +147,13 @@ rule prepare_equivalence_dataset:
             dataset.processed_data_dir={input.timit_data}
         """)
 
+def get_equivalence_dataset(wildcards):
+    if wildcards.equivalence_classer == "random":
+        # default to phoneme-level
+        return f"outputs/equivalence_datasets/{wildcards.dataset}/{wildcards.base_model_name}/phoneme/equivalence.pkl"
+    else:
+        return f"outputs/equivalence_datasets/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.equivalence_classer}/equivalence.pkl"
+
 
 rule run:
     input:
@@ -218,7 +225,7 @@ rule extract_embeddings:
     input:
         model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
-        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
+        equivalence_dataset = get_equivalence_dataset
 
     resources:
         gpu = 1
@@ -248,16 +255,16 @@ rule extract_embeddings:
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",
-        model_dir = "outputs/models/{model_name}/{equivalence_classer}",
+        model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl",
+        equivalence_dataset = get_equivalence_dataset,
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
 
     output:
-        outdir = directory("outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}"),
-        notebook = "outputs/notebooks/{model_name}/{equivalence_classer}/{notebook}/{notebook}.ipynb"
+        outdir = directory("outputs/notebooks/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{notebook}"),
+        notebook = "outputs/notebooks/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{notebook}/{notebook}.ipynb"
 
     shell:
         """
@@ -276,6 +283,58 @@ rule run_all_notebooks:
     input:
         expand("outputs/notebooks/{model_spec}/{notebook}/{notebook}.ipynb",
                 model_spec=MODEL_SPEC_LIST, notebook=ALL_MODEL_NOTEBOOKS)
+
+
+def get_embeddings_for_synthetic_encoder_evaluation(wildcards, return_list=True):
+    evaluation = config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]
+
+    paths = {}
+    for model_ref in evaluation["models"]:
+        with open(f"conf_encoder/feature_sets/{model_ref}.yaml", "r") as f:
+            model_config = yaml.safe_load(f)
+
+        for feat in model_config.get("model_features", []):
+            paths[model_ref] = f"outputs/model_embeddings/{wildcards.dataset}/{feat['base_model']}/{feat['model']}/{feat['equivalence']}/embeddings.npy"
+
+    if return_list:
+        return list(paths.values())
+    else:
+        return paths
+
+rule estimate_synthetic_encoder:
+    input:
+        dataset = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{target_model_name}/hidden_states.pkl",
+        embeddings = get_embeddings_for_synthetic_encoder_evaluation,
+        notebook = "notebooks/synthetic_encoding/feature_selection.ipynb"
+
+    output:
+        model_dir = directory("outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}"),
+        notebook = "outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}/feature_selection.ipynb",
+
+    run:
+        evaluation = config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]
+
+        # Recompute embedding paths with keys here
+        embedding_paths = get_embeddings_for_synthetic_encoder_evaluation(wildcards, return_list=False)
+        # sanity check -- should match snakemake inputs
+        assert set(embedding_paths.values()) == set(input.embeddings)
+
+        params = {
+            "dataset_path": input.dataset,
+            "hidden_states_path": input.hidden_states,
+            "output_dir": output.model_dir,
+            "model_embedding_paths": embedding_paths,
+
+            "num_components": evaluation["num_components"],
+            "num_embeddings_to_select": evaluation["num_embeddings_to_select"],
+        }
+
+        shell(f"""
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 rule estimate_encoder:

@@ -69,7 +69,6 @@ models:
     model: randomff_32
     equivalence: random
 
-# TODO need more than one block. Expect to see r =~ 0.6
 encoding:
   data:
     - subject: EC152
@@ -103,3 +102,28 @@ encoding:
       model1: baseline
     - model2: random8
       model1: baseline
+
+
+synthetic_encoding:
+
+  evaluations:
+
+    basic10:
+      num_components: 10
+      num_embeddings_to_select: 3
+
+      models:
+        - phoneme8
+        - next_phoneme
+        - syllable
+        - word
+
+    basic50:
+      num_components: 50
+      num_embeddings_to_select: 3
+
+      models:
+        - phoneme8
+        - next_phoneme
+        - syllable
+        - word

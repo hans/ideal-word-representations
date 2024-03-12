@@ -28,7 +28,7 @@ def main(config: DictConfig):
         equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
 
     embeddings = compute_embeddings(model, equiv_dataset, hidden_states)
-    embeddings.numpy()
+    embeddings = embeddings.cpu().numpy()
     
     out_path = Path(HydraConfig.get().runtime.output_dir) / "embeddings.npy"
     np.save(out_path, embeddings)
