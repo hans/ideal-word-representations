@@ -4,6 +4,7 @@ import random
 from typing import Optional, Iterator
 
 from datasets import Dataset, IterableDataset
+from IsoScore.IsoScore import IsoScore
 import numpy as np
 from scipy.spatial.distance import cdist, pdist
 import torch
@@ -400,6 +401,11 @@ def compute_embedding_uniformity(embeddings: np.ndarray, metric="euclidean"):
     return distances.mean()
 
 
+def compute_embedding_axis_correlation(embeddings: np.ndarray):
+    corrs = np.corrcoef(embeddings.T)
+    return np.abs(corrs[np.triu_indices_from(corrs, k=1)]).mean()
+
+
 def compute_metrics(p: EvalPrediction):
     assert len(p.predictions) == 3
     embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions
@@ -414,4 +420,6 @@ def compute_metrics(p: EvalPrediction):
         "eval_embedding_alignment": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="euclidean"),
         "eval_embedding_alignment_cosine": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="cosine"),
         "eval_embedding_uniformity": compute_embedding_uniformity(embeddings),
+        "eval_embedding_corr": compute_embedding_axis_correlation(embeddings),
+        "eval_embedding_isoscore": IsoScore(embeddings),
     }
