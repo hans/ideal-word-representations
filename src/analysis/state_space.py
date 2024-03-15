@@ -3,15 +3,13 @@ State space analysis tools for integrator models.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
 import torch
 
-from src.datasets.speech_equivalence import SpeechHiddenStateDataset
-from src.models.integrator import ContrastiveEmbeddingModel, compute_embeddings
+from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
 
 
@@ -56,8 +54,11 @@ class StateSpaceAnalysisSpec:
                 assert (cuts_group.onset_frame_idx >= start).all()
                 assert (cuts_group.offset_frame_idx <= end).all()
 
-    def is_compatible_with(self, dataset: SpeechHiddenStateDataset) -> bool:
-        return self.total_num_frames == dataset.num_frames
+    def is_compatible_with(self, dataset: Union[SpeechHiddenStateDataset, np.ndarray]) -> bool:
+        if isinstance(dataset, SpeechHiddenStateDataset):
+            return self.total_num_frames == dataset.num_frames
+        else:
+            return self.total_num_frames == dataset.shape[0]
     
     def drop_labels(self, drop_idxs=None, drop_names=None):
         if drop_idxs is None and drop_names is None:

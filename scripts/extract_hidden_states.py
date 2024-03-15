@@ -18,7 +18,8 @@ from src.models.transformer import prepare_processor
 def extract_hidden_states(dataset: datasets.Dataset,
                           model: transformers.Wav2Vec2Model,
                           processor: transformers.Wav2Vec2Processor,
-                          layer: int) -> SpeechHiddenStateDataset:
+                          layer: int,
+                          batch_size=32) -> SpeechHiddenStateDataset:
     flat_idxs = []
     frame_states_list = []
 
@@ -49,7 +50,9 @@ def extract_hidden_states(dataset: datasets.Dataset,
             flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
             frame_states_list.append(hidden_states_i[:num_frames_i])
 
-    dataset.map(extract_representations, batched=True, batch_size=32, with_indices=True,
+    dataset.map(extract_representations,
+                batched=True, batch_size=batch_size,
+                with_indices=True,
                 desc="Extracting hidden states")
     
     frame_states = torch.cat(frame_states_list, dim=0)

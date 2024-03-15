@@ -30,8 +30,7 @@ def main(config: DictConfig):
     embeddings = compute_embeddings(model, equiv_dataset, hidden_states)
     embeddings = embeddings.cpu().numpy()
     
-    out_path = Path(HydraConfig.get().runtime.output_dir) / "embeddings.npy"
-    np.save(out_path, embeddings)
+    np.save(config.model.embeddings_path, embeddings)
 
 
 if __name__ == "__main__":
