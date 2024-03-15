@@ -62,4 +62,4 @@ def get_best_checkpoint(trainer_dir) -> str:
     if best_checkpoint.startswith("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):
         best_checkpoint = best_checkpoint[len("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):]
 
-    return best_checkpoint
+    return Path(trainer_dir) / Path(best_checkpoint).name

@@ -10,6 +10,7 @@ from scipy.spatial.distance import cdist, pdist
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.parametrizations import spectral_norm
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import PreTrainedModel, PretrainedConfig, EvalPrediction
 from transformers.file_utils import ModelOutput
@@ -28,7 +29,7 @@ class RNNModel(nn.Module):
         else:
             fn = nn.LSTM if type == "lstm" else nn.RNN
             self.rnn = fn(num_layers=num_layers, input_size=input_dim, hidden_size=hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, output_dim)
+        self.fc: nn.Module = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, lengths):
         lengths = lengths.to("cpu")
@@ -45,10 +46,17 @@ class RNNModel(nn.Module):
     
 
 class ContrastiveEmbeddingObjective(nn.Module):
-    def __init__(self, tau=0.1, batch_soft_negatives=False):
+    def __init__(self, tau=0.1, batch_soft_negatives=False,
+                 regularization=None):
         super(ContrastiveEmbeddingObjective, self).__init__()
         self.tau = tau
         self.batch_soft_negatives = batch_soft_negatives
+
+        regularization_type = regularization[0] if isinstance(regularization, (tuple, list)) else regularization
+        if regularization_type not in [None, "covariance", "spectral_norm"]:
+            raise ValueError(f"Unknown regularization {regularization}")
+        self.regularization_type = regularization_type
+        self.regularization = regularization
 
     def forward(self, embeddings, pos_embeddings, neg_embeddings,
                 reduction="mean",
@@ -85,7 +93,36 @@ class ContrastiveEmbeddingObjective(nn.Module):
 
             neg_loss += soft_neg_loss
         
-        return pos_loss + neg_loss
+        train_loss = pos_loss + neg_loss
+
+        ### Regularization
+
+        if self.training:
+            regularization_loss = torch.tensor(0.0, device=embeddings.device)
+            if self.regularization_type == "covariance":
+                scaler = float(self.regularization[1]) if isinstance(self.regularization, (list, tuple)) else 1.0
+                if embeddings.shape[0] >= 2 and embeddings.shape[1] >= 2:
+                    # Regularize by penalizing divergence of embedding covariance matrix from identity
+                    # i.e., encourage axes to be decorrelated
+                    embedding_cov = torch.cov(embeddings.T)
+
+                    # Only penalize covariance off diagonal
+                    embedding_cov = embedding_cov[~torch.eye(embedding_cov.shape[0], dtype=bool)]
+                    target = torch.zeros_like(embedding_cov)
+
+                    # TODO tune the scale of this relative to training loss
+                    regularization_loss = scaler * F.mse_loss(embedding_cov, target)
+
+                    if torch.isnan(regularization_loss):
+                        import ipdb; ipdb.set_trace()
+                
+            elif self.regularization_type == "spectral_norm":
+                # Do nothing -- this happens outside the loss function, which only has access to embeddings
+                pass
+
+            train_loss += regularization_loss
+
+        return train_loss
 
 
 @dataclass
@@ -99,7 +136,6 @@ class ContrastiveEmbeddingModelOutput(ModelOutput):
 
 @dataclass
 class ContrastiveEmbeddingModelConfig(PretrainedConfig):
-    # TODO how to reference other model here?
     base_model_ref: str = "facebook/wav2vec2-base"
     base_model_layer: int = 6
 
@@ -120,6 +156,8 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     the same class. If False, only use the hard negative example.
     """
 
+    regularization: Optional[str] = None
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -139,6 +177,10 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                             config.hidden_dim,
                             config.output_dim)
         
+        if self.config.regularization == "spectral_norm":
+            # Register spectral norm parameterization on RNN output layer.
+            self.rnn.fc = spectral_norm(self.rnn.fc)
+        
     def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
         return self.config.is_compatible_with(dataset)
 
@@ -153,7 +195,10 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         in_batch_soft_negatives = in_batch_soft_negatives if in_batch_soft_negatives is not None \
             else self.config.in_batch_soft_negatives
 
-        loss_fn = ContrastiveEmbeddingObjective(tau=self.config.tau, batch_soft_negatives=in_batch_soft_negatives)
+        loss_fn = ContrastiveEmbeddingObjective(
+            tau=self.config.tau,
+            batch_soft_negatives=in_batch_soft_negatives,
+            regularization=self.config.regularization)
         loss = loss_fn(embeddings, pos_embeddings, neg_embeddings,
                        reduction=loss_reduction,
                        embeddings_class=kwargs.get("example_idx"))

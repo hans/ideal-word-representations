@@ -68,7 +68,7 @@ def train(config: DictConfig):
         equivalence_classer=config.equivalence.equivalence_classer,
         max_length=max_length,
         input_dim=hidden_state_dataset.hidden_size,
-        **config.model)
+        **OmegaConf.to_object(config.model))
     model_init = make_model_init(model_config, device=config.device)
     
     # Don't directly use `instantiate` with `TrainingArguments` or `Trainer` because the

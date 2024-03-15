@@ -1,0 +1,7 @@
+hidden_dim: 32
+output_dim: 8
+
+in_batch_soft_negatives: true
+regularization:
+  - covariance
+  - 1000
