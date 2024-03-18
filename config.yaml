@@ -6,40 +6,40 @@ datasets:
 models:
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_3
+    model: rnn_3-weightdecay0.01
     equivalence: phoneme
 
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: phoneme
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: syllable
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: next_phoneme
   # - base_model: w2v2_6
   #   dataset: timit
-  #   model: rnn_8
+  #   model: rnn_8-weightdecay0.01
   #   equivalence: phoneme_within_word_prefix
   # - base_model: w2v2_6
   #   dataset: timit
-  #   model: rnn_8
+  #   model: rnn_8-weightdecay0.01
   #   equivalence: phoneme_within_word_suffix
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: word
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: biphone_recon
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8
+    model: rnn_8-weightdecay0.01
     equivalence: biphone_pred
 
   # - base_model: w2v2_6

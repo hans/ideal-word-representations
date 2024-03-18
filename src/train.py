@@ -80,6 +80,7 @@ def train(config: DictConfig):
         output_dir=HydraConfig.get().runtime.output_dir,
         logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
         max_steps=max_training_steps,
+        weight_decay=config.model.get("weight_decay", 0.0),
         **OmegaConf.to_object(config.training_args))
 
     callbacks = []

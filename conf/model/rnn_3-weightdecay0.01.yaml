@@ -1,0 +1,5 @@
+hidden_dim: 32
+output_dim: 3
+
+in_batch_soft_negatives: true
+weight_decay: 0.01
