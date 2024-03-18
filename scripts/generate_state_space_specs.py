@@ -156,9 +156,9 @@ def compute_phoneme_state_space(dataset: datasets.Dataset,
     frame_spans_by_syllable_index = defaultdict(list)
     frame_spans_by_phoneme_and_syllable_index = defaultdict(list)
 
-    def process_item(item, idx):
+    def process_item(item):
         # How many frames do we have stored for this item?
-        start_frame, stop_frame = frames_by_item[idx]
+        start_frame, stop_frame = frames_by_item[item["idx"]]
         num_frames = stop_frame - start_frame
 
         compression_ratio = num_frames / len(item["input_values"])

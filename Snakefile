@@ -84,7 +84,8 @@ rule prepare_audioset:
 
 rule preprocess_timit:
     input:
-        timit_raw = config["datasets"]["timit"]["raw_path"]
+        timit_raw = config["datasets"]["timit"]["raw_path"],
+        script = "notebooks/preprocessing/timit.ipynb"
 
     output:
         data_path = directory("outputs/preprocessed_data/timit"),
@@ -92,7 +93,7 @@ rule preprocess_timit:
 
     shell:
         """
-        papermill --log-output notebooks/preprocessing/timit.ipynb \
+        papermill --log-output {input.script} \
             {output.notebook_path} \
             -p base_dir {workflow.basedir} \
             -p dataset_path {input.timit_raw} \
@@ -244,12 +245,34 @@ rule extract_embeddings:
             hydra.run.dir={outdir} \
             model={wildcards.model_name} \
             +model.output_dir={input.model_dir} \
+            +model.embeddings_path={output.embeddings} \
             base_model={wildcards.base_model_name} \
             +base_model.hidden_state_path={input.hidden_states} \
             equivalence={wildcards.equivalence_classer} \
             +equivalence.path={input.equivalence_dataset}
         """)
 
+
+rule compute_state_spaces:
+    input:
+        dataset = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
+
+    output:
+        "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl"
+
+    run:
+        outdir = Path(output[0]).parent
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        python scripts/generate_state_space_specs.py \
+            hydra.run.dir={outdir} \
+            base_model={wildcards.base_model_name} \
+            dataset.processed_data_dir={input.dataset} \
+            +base_model.hidden_state_path={input.hidden_states} \
+            +analysis.state_space_specs_path={output[0]}
+        """)
 
 
 rule run_notebook:
@@ -260,6 +283,7 @@ rule run_notebook:
         dataset = "outputs/preprocessed_data/{dataset}",
         equivalence_dataset = get_equivalence_dataset,
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
 
     output:
@@ -275,6 +299,7 @@ rule run_notebook:
             -p dataset_path {input.dataset} \
             -p equivalence_path {input.equivalence_dataset} \
             -p hidden_states_path {input.hidden_states} \
+            -p state_space_specs_path {input.state_space_specs} \
             -p embeddings_path {input.embeddings}
         """
 
