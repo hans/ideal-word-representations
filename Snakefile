@@ -189,15 +189,16 @@ rule run:
 
 
 # Run train without actually training -- used to generate random model weights
+NO_TRAIN_DEFAULT_EQUIVALENCE = "phoneme_10frames"
 rule run_no_train:
     input:
         base_model_config = "conf/base_model/{base_model_name}.yaml",
-        equivalence_config = "conf/equivalence/phoneme.yaml",
+        equivalence_config = f"conf/equivalence/{NO_TRAIN_DEFAULT_EQUIVALENCE}.yaml",
         model_config = "conf/model/random{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
-        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/phoneme/equivalence.pkl"
+        equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NO_TRAIN_DEFAULT_EQUIVALENCE}/equivalence.pkl"
 
     output:
         full_trace = directory("outputs/models/{dataset}/{base_model_name}/random{model_name}/random")
@@ -210,7 +211,7 @@ rule run_no_train:
             model=random{wildcards.model_name} \
             base_model={wildcards.base_model_name} \
             +base_model.hidden_state_path={input.hidden_states} \
-            equivalence=phoneme \
+            equivalence={NO_TRAIN_DEFAULT_EQUIVALENCE} \
             +equivalence.path={input.equivalence_dataset} \
             trainer.do_train=false
         """

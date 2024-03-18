@@ -1,0 +1,5 @@
+_target_: src.datasets.speech_equivalence.make_timit_equivalence_dataset
+
+name: next_phoneme_10frames
+equivalence_classer: next_phoneme
+num_frames_per_phoneme: 10

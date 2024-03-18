@@ -7,20 +7,20 @@ models:
   - base_model: w2v2_6
     dataset: timit
     model: rnn_3-weightdecay0.01
-    equivalence: phoneme
+    equivalence: phoneme_10frames
 
+  # - base_model: w2v2_6
+  #   dataset: timit
+  #   model: rnn_8-weightdecay0.01
+  #   equivalence: phoneme_10frames
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
-    equivalence: phoneme
+    equivalence: syllable_10frames
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
-    equivalence: syllable
-  - base_model: w2v2_6
-    dataset: timit
-    model: rnn_8-weightdecay0.01
-    equivalence: next_phoneme
+    equivalence: next_phoneme_10frames
   # - base_model: w2v2_6
   #   dataset: timit
   #   model: rnn_8-weightdecay0.01
@@ -32,15 +32,15 @@ models:
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
-    equivalence: word
+    equivalence: word_10frames
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
-    equivalence: biphone_recon
+    equivalence: biphone_recon_10frames
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
-    equivalence: biphone_pred
+    equivalence: biphone_pred_10frames
 
   # - base_model: w2v2_6
   #   model: rnn_32

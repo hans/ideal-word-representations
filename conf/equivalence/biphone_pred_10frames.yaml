@@ -1,0 +1,5 @@
+_target_: src.datasets.speech_equivalence.make_timit_equivalence_dataset
+
+name: biphone_pred_10frames
+equivalence_classer: biphone_pred
+num_frames_per_phoneme: 10
