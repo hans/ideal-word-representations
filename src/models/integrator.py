@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import random
 from typing import Optional, Iterator
@@ -11,13 +12,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
-from torch.utils.data import DataLoader, TensorDataset
 from transformers import PreTrainedModel, PretrainedConfig, EvalPrediction
 from transformers.file_utils import ModelOutput
-from transformers.trainer_utils import speed_metrics
 from tqdm.auto import tqdm, trange
 
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
+
+
+L = logging.getLogger(__name__)
 
 
 class RNNModel(nn.Module):
@@ -328,7 +330,10 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
 def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
                     hidden_state_dataset: SpeechHiddenStateDataset,
                     max_length: int,
-                    layer: Optional[int] = None, **kwargs) -> tuple[int, IterableDataset, Dataset]:
+                    layer: Optional[int] = None,
+                    eval_fraction=0.1,
+                    max_eval_size=10000,
+                    **kwargs) -> tuple[int, IterableDataset, Dataset]:
     """
     Prepare a negative-sampling dataset for contrastive embedding learning.
 
@@ -338,7 +343,12 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
     all_idxs = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0].numpy()
     all_idxs = np.random.permutation(all_idxs)
     
-    train_idxs, test_idxs = all_idxs[:int(0.9 * len(all_idxs))], all_idxs[int(0.9 * len(all_idxs)):]
+    eval_num_samples = int(eval_fraction * len(all_idxs))
+    if max_eval_size is not None and eval_num_samples > max_eval_size:
+        L.info(f"Reducing eval set size from {eval_num_samples} to {max_eval_size}")
+        eval_num_samples = max_eval_size
+
+    test_idxs, train_idxs = all_idxs[:eval_num_samples], all_idxs[eval_num_samples:]
 
     dataset_kwargs = {
         "equiv_dataset": equiv_dataset,
