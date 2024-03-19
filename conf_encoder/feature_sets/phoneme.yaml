@@ -8,6 +8,6 @@ baseline_features:
 
 model_features:
   - base_model: w2v2_6
-    model: rnn_8
-    equivalence: phoneme
+    model: rnn_3-weightdecay0.01
+    equivalence: phoneme_10frames
     featurization: last_frame

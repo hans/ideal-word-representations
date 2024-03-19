@@ -19,7 +19,7 @@ models:
     equivalence: syllable_10frames
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8-weightdecay0.01
+    model: rnn_3-weightdecay0.01
     equivalence: next_phoneme_10frames
   # - base_model: w2v2_6
   #   dataset: timit
@@ -113,7 +113,7 @@ synthetic_encoding:
       num_embeddings_to_select: 3
 
       models:
-        - phoneme8
+        - phoneme
         - next_phoneme
         - syllable
         - word
@@ -123,7 +123,7 @@ synthetic_encoding:
       num_embeddings_to_select: 3
 
       models:
-        - phoneme8
+        - phoneme
         - next_phoneme
         - syllable
         - word
