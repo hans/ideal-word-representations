@@ -36,6 +36,10 @@ models:
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
+    equivalence: word_broad_10frames
+  - base_model: w2v2_6
+    dataset: timit
+    model: rnn_8-weightdecay0.01
     equivalence: biphone_recon_10frames
   - base_model: w2v2_6
     dataset: timit

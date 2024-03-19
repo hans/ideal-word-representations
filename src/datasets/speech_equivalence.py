@@ -15,24 +15,57 @@ import transformers
 
 
 # defines the critical logic by which frames are equivalence-classed.
-# Functions accept word annotation and frame index, and return arbitrary
-# grouping value.
-EquivalenceClasser: TypeAlias = Callable[[Any, int], Hashable]
+# Functions accept grouped word phonemic annotations, word utterances and
+# frame index, and return arbitrary grouping value.
+EquivalenceClasser: TypeAlias = Callable[[Any, str, int], Hashable]
 equivalence_classers: dict[str, EquivalenceClasser] = {
     "phoneme_within_word_prefix": 
-        lambda word, i: tuple(phone["phone"] for phone in word[:i+1]),
-    "phoneme": lambda word, i: word[i]["phone"],
-    "next_phoneme": lambda word, i: word[i+1]["phone"] if i + 1 < len(word) else None,
-    "phoneme_within_word_suffix": lambda word, i: tuple(phone["phone"] for phone in word[i:]),
-    "word_suffix": lambda word, i: tuple(phone["phone"] for phone in word[i + 1:]),
-    "word": lambda word, i: tuple(phone["phone"] for phone in word),
+        lambda word_phonemic_detail, word_str, i: tuple(phone["phone"] for phone in word_phonemic_detail[:i+1]),
+    "phoneme": lambda word_phonemic_detail, word_str, i: word_phonemic_detail[i]["phone"],
+    "next_phoneme": lambda word_phonemic_detail, word_str, i: word_phonemic_detail[i+1]["phone"] if i + 1 < len(word_phonemic_detail) else None,
+    "phoneme_within_word_suffix": lambda word_phonemic_detail, word_str, i: tuple(phone["phone"] for phone in word_phonemic_detail[i:]),
+    "word_suffix": lambda word_phonemic_detail, word_str, i: tuple(phone["phone"] for phone in word_phonemic_detail[i + 1:]),
+    "word": lambda word_phonemic_detail, word_str, i: tuple(phone["phone"] for phone in word_phonemic_detail),
+    "word_broad": lambda word_phonemic_detail, word_str, i: word_str,
 
-    "biphone_recon": lambda word, i: (word[i-1]["phone"] if i > 0 else "#", word[i]["phone"]),
-    "biphone_pred": lambda word, i: (word[i]["phone"], word[i+1]["phone"] if i + 1 < len(word) else "#"),
+    "biphone_recon": lambda word_phonemic_detail, word_str, i: (word_phonemic_detail[i-1]["phone"] if i > 0 else "#", word_phonemic_detail[i]["phone"]),
+    "biphone_pred": lambda word_phonemic_detail, word_str, i: (word_phonemic_detail[i]["phone"], word_phonemic_detail[i+1]["phone"] if i + 1 < len(word_phonemic_detail) else "#"),
 
-    "phoneme_fixed": lambda word, i: word[i]["phone"],
+    "phoneme_fixed": lambda word_phonemic_detail, word_str, i: word_phonemic_detail[i]["phone"],
 
-    "syllable": lambda word, i: tuple(word[i]["syllable_phones"]) if word[i]["syllable_phones"] else None,
+    "syllable": lambda word_phonemic_detail, word_str, i: tuple(word_phonemic_detail[i]["syllable_phones"]) if word_phonemic_detail[i]["syllable_phones"] else None,
+}
+
+def syllable_anti_grouper(word_phonemic_detail, i):
+    # mismatch: current syllable
+    mismatch_key = tuple(word_phonemic_detail[i]["syllable_phones"]) if word_phonemic_detail[i]["syllable_phones"] else None
+    if mismatch_key is None:
+        return None, None
+
+    # match: preceding syllable
+    current_syllable_idx = word_phonemic_detail[i]["syllable_idx"]
+    if current_syllable_idx == 0:
+        return None, None
+    for j in range(i - 1, -1, -1):
+        if word_phonemic_detail[j]["syllable_idx"] < current_syllable_idx:
+            return tuple(word_phonemic_detail[j]["syllable_phones"]) if word_phonemic_detail[j]["syllable_phones"] else None, None
+
+    return None, None
+
+
+# Define subequivalence classing logic. Subequivalence classes define the conjunction of 1) a mismatch
+# on an equivalence class and 2) a match on a second equivalence class. This can be used to define
+# hard negative samples, for example -- phonemes which mismatch but appear in the same context,
+# or syllables which mismatch but contain a substantial number of similar segments.
+#
+# For a given word annotation and phoneme index, return a grouping value (on which a frame should be
+# mismatched with other frames) and an anti-grouping value (on which a frame should match with other
+# frames).
+subequivalence_classers: dict[str, Callable] = {
+    "phoneme": lambda word, i: (word[i]["phone"], word[i - 1]["phone"] if i > 0 else "#"),
+
+    # anti-grouping: preceding syllable
+    "syllable": syllable_anti_grouper,
 }
 
 # Each equivalence classer also defines a function to compute the start of the
@@ -44,6 +77,7 @@ start_references = {
     "phoneme_within_word_suffix": "word",
     "word_suffix": "word",
     "word": "word",
+    "word_broad": "word",
 
     "biphone_recon": "word",
     "biphone_pred": "word",
@@ -182,17 +216,15 @@ def make_timit_equivalence_dataset(name: str,
         # Now align and store frame metadata
         num_frames = frames_by_item[idx][1] - frames_by_item[idx][0]
         compression_ratio = num_frames / len(item["input_values"])
-        for word in item["word_phonemic_detail"]:
+        for i, word in enumerate(item["word_phonemic_detail"]):
             if len(word) == 0:
                 continue
 
-            word_str = tuple(phone["phone"] for phone in word)
+            word_str = item["word_detail"]["utterance"][i]
             word_start = int(word[0]["start"] * compression_ratio)
             word_end = int(word[-1]["stop"] * compression_ratio)
 
             for j, phone in enumerate(word):
-                word_prefix = word_str[:j + 1]
-
                 phone_str = phone["phone"]
                 phone_start = int(phone["start"] * compression_ratio)
                 phone_end = int(phone["stop"] * compression_ratio)
@@ -202,7 +234,7 @@ def make_timit_equivalence_dataset(name: str,
                     # Sample uniformly spaced frames within the span of the phoneme
                     ks = np.linspace(phone_start, phone_end, num_frames_per_phoneme).round().astype(int)
                 for k in ks:
-                    class_label = equivalence_classers[equivalence_classer](word, j)
+                    class_label = equivalence_classers[equivalence_classer](word, word_str, j)
                     if class_label is not None:
                         frame_groups[class_label].append((idx, k))
     dataset.map(process_item, with_indices=True, desc="Aligning metadata")

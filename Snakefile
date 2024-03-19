@@ -31,7 +31,7 @@ def select_gpu_device(wildcards, resources):
     if resources.gpu == 0:
         return None
     import GPUtil
-    available_l = GPUtil.getAvailable(order = 'random', limit = resources.gpu, maxLoad = 0.5, maxMemory = 0.5, includeNan=False, excludeID=[], excludeUUID=[])
+    available_l = GPUtil.getAvailable(order = 'random', limit = resources.gpu, maxLoad = 0.5, maxMemory = 1.0, includeNan=False, excludeID=[], excludeUUID=[])
     available_str = ",".join([str(x) for x in available_l])
 
     if len(available_l) == 0 and resources.gpu > 0:
@@ -276,13 +276,21 @@ rule compute_state_spaces:
         """)
 
 
+NOTEBOOK_PHONEME_EQUIVALENCE = "phoneme_10frames"
+NOTEBOOK_WORD_EQUIVALENCE = "word_broad_10frames"
 rule run_notebook:
     input:
         notebook = "notebooks/{notebook}.ipynb",
         model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
 
         dataset = "outputs/preprocessed_data/{dataset}",
+
+        # reference particular equivalence dataset of this model, as well as standard
+        # equivalence representations at different unit levels
         equivalence_dataset = get_equivalence_dataset,
+        phoneme_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_PHONEME_EQUIVALENCE}/equivalence.pkl",
+        word_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_WORD_EQUIVALENCE}/equivalence.pkl",
+
         hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
         state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
@@ -299,6 +307,8 @@ rule run_notebook:
             -p output_dir {output.outdir} \
             -p dataset_path {input.dataset} \
             -p equivalence_path {input.equivalence_dataset} \
+            -p phoneme_equivalence_path {input.phoneme_equivalence_dataset} \
+            -p word_equivalence_path {input.word_equivalence_dataset} \
             -p hidden_states_path {input.hidden_states} \
             -p state_space_specs_path {input.state_space_specs} \
             -p embeddings_path {input.embeddings}
