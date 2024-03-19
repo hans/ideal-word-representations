@@ -1,0 +1,3 @@
+name: w2v2_4
+model_ref: facebook/wav2vec2-base
+layer: 4

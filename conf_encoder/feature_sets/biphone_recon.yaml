@@ -1,0 +1,13 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+  - aud
+
+model_features:
+  - base_model: w2v2_6
+    model: rnn_8-weightdecay0.01
+    equivalence: biphone_recon_10frames
+    featurization: last_frame

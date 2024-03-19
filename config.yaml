@@ -118,9 +118,9 @@ synthetic_encoding:
 
       models:
         - phoneme
-        - next_phoneme
+        - biphone_recon
         - syllable
-        - word
+        - word_broad
 
     basic50:
       num_components: 50
@@ -128,6 +128,6 @@ synthetic_encoding:
 
       models:
         - phoneme
-        - next_phoneme
+        - biphone_recon
         - syllable
-        - word
+        - word_broad
