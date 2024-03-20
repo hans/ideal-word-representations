@@ -16,6 +16,7 @@ import torch
 from tqdm.auto import tqdm
 import yaml
 
+from src.analysis.state_space import StateSpaceAnalysisSpec
 from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.encoding.ecog import timit as timit_encoding
 from src.encoding.ecog import get_electrode_df
@@ -37,6 +38,7 @@ class ContrastiveModelSnapshot:
     dataset: datasets.Dataset
     hidden_states: SpeechHiddenStateDataset
     equiv_dataset: SpeechEquivalenceDataset
+    state_space: StateSpaceAnalysisSpec
     embeddings: np.ndarray
 
     @classmethod
@@ -47,6 +49,8 @@ class ContrastiveModelSnapshot:
             equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
         with open(feature_spec.hidden_state_path, "rb") as f:
             hidden_states: SpeechHiddenStateDataset = torch.load(f)
+        with open(feature_spec.state_space_path, "rb") as f:
+            state_space: StateSpaceAnalysisSpec = torch.load(f)[feature_spec.state_space]
         embeddings = np.load(feature_spec.embeddings_path)
 
         return cls(
@@ -54,6 +58,7 @@ class ContrastiveModelSnapshot:
             dataset=dataset,
             hidden_states=hidden_states,
             equiv_dataset=equiv_dataset,
+            state_space=state_space,
             embeddings=embeddings
         )
 
@@ -69,11 +74,10 @@ def load_and_align_model_embeddings(config, out):
 
     if len(config.feature_sets.model_features) != 1:
         raise NotImplementedError("Only one model feature set is supported")
-    model = ContrastiveModelSnapshot.from_config(
-        config, next(iter(config.feature_sets.model_features.values())))
+    feature_spec = next(iter(config.feature_sets.model_features.values()))
+    model = ContrastiveModelSnapshot.from_config(config, feature_spec)
 
     out_all_names = {out_i["name"] for out_i in out}
-
     name_to_item_idx, name_to_frame_bounds, compression_ratios = {}, {}, {}
     def process_item(item):
         name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
@@ -94,11 +98,11 @@ def load_and_align_model_embeddings(config, out):
                    for out_i in out if out_i["name"] in name_to_frame_bounds]
     np.testing.assert_allclose(*zip(*comparisons), atol=0.05,
                                err_msg="ECoG data and model embeddings should be of approximately the same length")
-    
-    # Resample and align model embeddings to be the same size
-    # as the ECoG data
+
+    # Scatter model embeddings into a time series aligned with ECoG data.
     n_model_dims = model.embeddings.shape[1]
     embedding_misses = 0
+    embedding_scatter_hits = 0
     for i, out_i in enumerate(out):
         name = out_i["name"]
 
@@ -116,32 +120,39 @@ def load_and_align_model_embeddings(config, out):
             embedding_misses += 1
             continue
 
-        # TODO make this logic customizable
-
-        # Find annotated unit ends relative to start frame
-        unit_ends = (model.equiv_dataset.Q[frame_start:frame_end] != -1).nonzero(as_tuple=True)[0]
-        # Find unit starts. NB this only works assuming 1 annotated frame per unit (phoneme)
-        unit_starts = np.concatenate([[0], unit_ends[:-1] + 1])
-
-        for unit_start, unit_end in zip(unit_starts, unit_ends):
+        # Now scatter model embeddings according to the spans in the state
+        # space specification
+        unit_spans = model.state_space.get_trajectories_in_span(frame_start, frame_end)
+        for _, _, unit_start, unit_end in unit_spans:
             # Compute aligned ECoG sample
             # magic numbers: 16 KHz audio sampling rate
             unit_start_secs = unit_start / compression_ratios[name] / 16000
             # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
             unit_start_ecog = int((0.5 + unit_start_secs) * 100)
 
-            embedding_data[:, unit_start_ecog] = model.embeddings[frame_start:frame_start + unit_end].mean(axis=0)
+            # Scatter an impulse predictor at the sample aligned to the onset of the unit
+            unit_embedding = None
+            if feature_spec.featurization == "last_frame":
+                unit_embedding = model.embeddings[unit_end]
+            elif feature_spec.featurization == "mean":
+                unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
+            else:
+                raise ValueError(f"Unknown featurization {feature_spec.featurization}")
+
+            embedding_data[:, unit_start_ecog] = unit_embedding
+            embedding_scatter_hits += 1
 
         out_i["model_embedding"] = embedding_data
 
     if embedding_misses > 0:
         L.warning(f"Skipped {embedding_misses} sentences ({embedding_misses / len(out) * 100}%) as they were not in the embedding set")
+    L.info(f"Scattered model embeddings for {embedding_scatter_hits} {feature_spec.state_space} units")
 
     return out
     
 
 
-def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
+def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
     data_dir = Path(config.corpus.paths.data_path) / data_spec.subject / config.corpus.name / "block_z"
 
     if data_spec.block is None:

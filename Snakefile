@@ -352,6 +352,11 @@ def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) 
         "equivalences": [
             _get_equivalence_dataset(dataset, feat['base_model'], feat['equivalence'])
             for _, feat in model_config.get("model_features", {}).items()
+        ],
+
+        "state_spaces": [
+            f"outputs/state_space_specs/{dataset}/{feat['base_model']}/state_space_specs.pkl"
+            for _, feat in model_config.get("model_features", {}).items()
         ]
     }
 
@@ -453,12 +458,14 @@ rule estimate_encoder:
 
         # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
         overrides = {}
-        for feature_set, embedding_path, equivalence_path, hidden_state_path in zip(
+        for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
                 [wildcards.feature_sets], encoder_inputs["embeddings"],
-                encoder_inputs["equivalences"], encoder_inputs["hidden_states"]):
+                encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
+                encoder_inputs["state_spaces"]):
             overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
             overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
             overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
+            overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
         overrides_str = join_hydra_overrides(overrides)
 
         shell("""

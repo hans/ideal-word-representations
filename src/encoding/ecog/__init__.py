@@ -8,7 +8,9 @@ from scipy.io import loadmat
 def get_electrode_df(config, subject: str):
     electrode_path = Path(config.corpus.paths.data_path) / subject / "BilingVowel" / "imaging" / "elecs" / "TDT_elecs_all.mat"
     elecs = loadmat(electrode_path, simplify_cells=True)["anatomy"]
-    ret = pd.DataFrame(elecs, columns=["label", "long_name", "type", "roi"]).set_index("label")
+    ret = pd.DataFrame(elecs, columns=["electrode_name", "long_name", "type", "roi"]) \
+        .set_index("electrode_name", append=True)
+    ret.index.set_names("electrode_idx", level=0, inplace=True)
     return ret
 
 

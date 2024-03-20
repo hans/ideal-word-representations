@@ -11,4 +11,6 @@ model_features:
     base_model: w2v2_6
     model: randomrnn_8
     equivalence: random
-    featurization: last_frame
+
+    state_space: phoneme
+    featurization: mean

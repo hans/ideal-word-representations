@@ -2,6 +2,7 @@
 State space analysis tools for integrator models.
 """
 
+from functools import cached_property
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -105,6 +106,35 @@ class StateSpaceAnalysisSpec:
             target_frame_spans=new_target_frame_spans,
             cuts=None,
         )
+    
+    @cached_property
+    def flat(self) -> np.ndarray:
+        """
+        Return a "flat" representation indexing into state space trajectories
+        by frame index rather than by label and instance index.
+
+        Returns a `total_num_frames` x 4 array, where each row is a reference
+        to the start of a state trajectory instance, with columns:
+        - start frame index
+        - end frame index
+        - label index
+        - instance index
+        """
+        flat_references = []
+        for i, (label, frame_spans) in enumerate(zip(self.labels, self.target_frame_spans)):
+            for j, (start, end) in enumerate(frame_spans):
+                flat_references.append((start, end, i, j))
+
+        return np.array(sorted(flat_references))
+
+    def get_trajectories_in_span(self, span_left, span_right) -> np.ndarray:
+        """
+        Return the state space trajectories that intersect with the given
+        frame span (inclusive).
+        """
+        return self.flat[
+            (self.flat[:, 0] <= span_right) & (self.flat[:, 1] >= span_left)
+        ]
 
 
 def prepare_word_trajectory_spec(
