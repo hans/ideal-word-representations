@@ -95,10 +95,21 @@ encoding:
       blocks:
         - B13
 
+    # good frontal coverage
+    - subject: EC208
+      blocks: null
+    - subject: EC260
+      blocks:
+        - B1
+
   model_comparisons:
     - model2: phoneme
       model1: baseline
     - model2: next_phoneme
+      model1: baseline
+    - model2: biphone_recon
+      model1: baseline
+    - model2: biphone_pred
       model1: baseline
     - model2: syllable
       model1: baseline

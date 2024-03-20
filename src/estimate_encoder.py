@@ -143,7 +143,12 @@ def load_and_align_model_embeddings(config, out):
 
 def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
     data_dir = Path(config.corpus.paths.data_path) / data_spec.subject / config.corpus.name / "block_z"
-    outfile = list(data_dir.glob(f"{data_spec.subject}_{data_spec.block}_{config.corpus.paths.out_file_glob}"))
+
+    if data_spec.block is None:
+        full_glob = f"{data_spec.subject}_*_{config.corpus.paths.out_file_glob}"
+    else:
+        full_glob = f"{data_spec.subject}_{data_spec.block}_{config.corpus.paths.out_file_glob}"
+    outfile = list(data_dir.glob(full_glob))
     assert len(outfile) == 1
 
     cout = loadmat(outfile[0], simplify_cells=True)
