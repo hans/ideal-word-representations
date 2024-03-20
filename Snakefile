@@ -414,7 +414,9 @@ def make_encoder_data_spec(include_subjects=None):
         data_spec = [d for d in data_spec if d["subject"] in include_subjects]
 
     # Now expand by block
-    data_spec = [{"subject": d["subject"], "block": block} for d in data_spec for block in d["blocks"]]
+    data_spec = [{"subject": d["subject"], "block": block}
+                 for d in data_spec
+                 for block in (d["blocks"] if d["blocks"] is not None else [None])]
 
     return hydra_param(data_spec)
 

@@ -4,23 +4,20 @@ from pathlib import Path
 from typing import cast
 
 import datasets
-import hydra
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
+import mat73
 from omegaconf import DictConfig
 import pandas as pd
-import pickle
 from scipy.io import loadmat
 import torch
 from tqdm.auto import tqdm
-import yaml
 
 from src.analysis.state_space import StateSpaceAnalysisSpec
 from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.encoding.ecog import timit as timit_encoding
 from src.encoding.ecog import get_electrode_df
-from src.models.integrator import load_or_compute_embeddings
 
 
 L = logging.getLogger(__name__)
@@ -148,7 +145,29 @@ def load_and_align_model_embeddings(config, out):
     L.info(f"Scattered model embeddings for {embedding_scatter_hits} {feature_spec.state_space} units")
 
     return out
-    
+
+
+def load_out_file(path):
+    """
+    Load preprocessed ECoG data, accounting for different Matlab export
+    formats.
+    """
+    try:
+        return loadmat(path, simplify_cells=True)
+    except NotImplementedError:
+        # Matlab >= 7.3 format. Load using `mat73` and simulate the
+        # simplify_cells functionality for the fields we care about
+        data = mat73.loadmat(path)
+
+        # Simplify cell representation
+        target_cells = ["name", "resp", "dataf", "befaft"]
+        ret = []
+        for i in range(len(data["out"]["resp"])):
+            ret.append({
+                cell: data["out"][cell][i] for cell in target_cells
+            })
+
+        return {"out": ret}
 
 
 def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
@@ -161,7 +180,7 @@ def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, n
     outfile = list(data_dir.glob(full_glob))
     assert len(outfile) == 1
 
-    cout = loadmat(outfile[0], simplify_cells=True)
+    cout = load_out_file(outfile[0])
     out = cout["out"]
 
     # add sentence details to out

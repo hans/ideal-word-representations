@@ -293,7 +293,13 @@ def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
     # Subset instructed electrodes
     if fit_response_dimensions is not None:
         Y = Y[:, fit_response_dimensions]
-    # Normalize response
+
+    Y_range = Y.max(axis=0) - Y.min(axis=0)
+    if (Y_range == 0).any():
+        null_response_dimensions = np.where(Y_range == 0)[0]
+        L.warning(f"Response dimensions {null_response_dimensions} have zero variance. Leaving them in; this will produce normalization errors below")
+
+    # Normalize response. NB this will log a warning for zero-variance channels
     Y -= Y.mean(axis=0)
     Y /= (Y.max(axis=0) - Y.min(axis=0))
 
