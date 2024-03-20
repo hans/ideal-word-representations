@@ -362,6 +362,7 @@ rule estimate_synthetic_encoder:
             "output_dir": output.model_dir,
             "model_embedding_paths": embedding_paths,
 
+            "target_smoosh": evaluation.get("target_smoosh", None),
             "num_components": evaluation["num_components"],
             "num_embeddings_to_select": evaluation["num_embeddings_to_select"],
         }
@@ -370,6 +371,33 @@ rule estimate_synthetic_encoder:
         papermill --log-output \
             {input.notebook} {output.notebook} \
             -y "{yaml.safe_dump(params)}"
+        """)
+
+
+def make_encoder_data_spec(include_subjects=None):
+    data_spec = config["encoding"]["data"]
+    if include_subjects is not None:
+        data_spec = [d for d in data_spec if d["subject"] in include_subjects]
+
+    # Now expand by block
+    data_spec = [{"subject": d["subject"], "block": block} for d in data_spec for block in d["blocks"]]
+
+    return hydra_param(data_spec)
+
+
+rule estimate_noise_ceiling:
+    output:
+        "outputs/encoder_noise_ceiling/splithalf_corrs.csv"
+
+    run:
+        outdir = Path(output[0]).parent
+        data_spec = make_encoder_data_spec()
+
+        shell("""
+        export PYTHONPATH=.
+        python scripts/estimate_noise_ceiling_splithalf.py \
+            hydra.run.dir={outdir} \
+            +data='{data_spec}'
         """)
 
 
@@ -382,14 +410,9 @@ rule estimate_encoder:
         coefs = "outputs/encoders/{feature_sets}/{subject}/coefs.csv"
 
     run:
-        try:
-            data_spec = next(iter(data_spec for data_spec in config["encoding"]["data"] if data_spec["subject"] == wildcards.subject))
-        except StopIteration:
-            raise ValueError(f"Subject {wildcards.subject} not found in config")
-
-        data_spec = [{"subject": wildcards.subject,
-                      "block": block} for block in data_spec["blocks"]]
-        data_spec = hydra_param(data_spec)
+        data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
+        if len(data_spec) == 0:
+            raise ValueError(f"No data for subject {wildcards.subject}")
 
         shell("""
         python estimate_encoder.py \

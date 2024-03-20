@@ -15,6 +15,7 @@ import yaml
 
 from src.datasets.speech_equivalence import SpeechEquivalenceDataset
 from src.encoding.ecog import timit as timit_encoding
+from src.encoding.ecog import get_electrode_df
 from src.models.integrator import load_or_compute_embeddings
 
 
@@ -150,13 +151,6 @@ def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], li
         scale_features=np.array(scale_features))
     
     return X, Y, feature_names, feature_shapes
-
-
-def get_electrode_df(config, subject):
-    electrode_path = Path(config.corpus.paths.data_path) / subject / "BilingVowel" / "imaging" / "elecs" / "TDT_elecs_all.mat"
-    elecs = loadmat(electrode_path, simplify_cells=True)["anatomy"]
-    ret = pd.DataFrame(elecs, columns=["label", "long_name", "type", "roi"]).set_index("label")
-    return ret
 
 
 def main(config):

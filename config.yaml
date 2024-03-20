@@ -114,20 +114,24 @@ synthetic_encoding:
 
     basic10:
       num_components: 10
-      num_embeddings_to_select: 3
+      num_embeddings_to_select: 4
 
       models:
         - phoneme
+        - next_phoneme
         - biphone_recon
+        - biphone_pred
         - syllable
         - word_broad
 
     basic50:
       num_components: 50
-      num_embeddings_to_select: 3
+      num_embeddings_to_select: 4
 
       models:
         - phoneme
+        - next_phoneme
         - biphone_recon
+        - biphone_pred
         - syllable
         - word_broad
