@@ -87,7 +87,6 @@ def load_and_align_model_embeddings(config, out):
             frame_start, frame_end = model.hidden_states.frames_by_item[item["idx"]]
             name_to_frame_bounds[name] = (frame_start, frame_end)
             compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
-
     model.dataset.map(process_item)
 
     # Make sure that ECoG data and model embeddings are of approximately the same length,
@@ -103,7 +102,7 @@ def load_and_align_model_embeddings(config, out):
     n_model_dims = model.embeddings.shape[1]
     embedding_misses = 0
     embedding_scatter_hits = 0
-    for i, out_i in enumerate(out):
+    for i, out_i in enumerate(tqdm(out, desc="Aligning model embeddings")):
         name = out_i["name"]
 
         n_ecog_samples = out_i["resp"].shape[1]
@@ -123,10 +122,10 @@ def load_and_align_model_embeddings(config, out):
         # Now scatter model embeddings according to the spans in the state
         # space specification
         unit_spans = model.state_space.get_trajectories_in_span(frame_start, frame_end)
-        for _, _, unit_start, unit_end in unit_spans:
+        for unit_start, unit_end, _, _ in unit_spans:
             # Compute aligned ECoG sample
             # magic numbers: 16 KHz audio sampling rate
-            unit_start_secs = unit_start / compression_ratios[name] / 16000
+            unit_start_secs = (unit_start - frame_start) / compression_ratios[name] / 16000
             # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
             unit_start_ecog = int((0.5 + unit_start_secs) * 100)
 
@@ -207,7 +206,7 @@ def main(config):
     electrode_df = get_electrode_df(config, subject)
     electrode_df.to_csv(out_dir / "electrodes.csv")
 
-    all_xy = [prepare_xy(config, data_spec) for data_spec in tqdm(config.data, desc="Prepare design matrix")]
+    all_xy = [prepare_xy(config, data_spec) for data_spec in config.data]
     X, Y, feature_names, feature_shapes = timit_encoding.concat_xy(all_xy)
 
     cv_outer = instantiate(config.cv)
