@@ -98,13 +98,13 @@ encoding:
   model_comparisons:
     - model2: phoneme
       model1: baseline
-    - model2: phoneme8
-      model1: baseline
     - model2: next_phoneme
       model1: baseline
     - model2: syllable
       model1: baseline
     - model2: random8
+      model1: baseline
+    - model2: word_broad
       model1: baseline
 
 

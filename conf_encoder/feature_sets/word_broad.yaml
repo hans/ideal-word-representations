@@ -7,7 +7,8 @@ baseline_features:
   - aud
 
 model_features:
-  - base_model: w2v2_6
+  word_broad:
+    base_model: w2v2_6
     model: rnn_8-weightdecay0.01
     equivalence: word_broad_10frames
     featurization: last_frame

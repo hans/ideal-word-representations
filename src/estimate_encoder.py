@@ -1,6 +1,9 @@
+from dataclasses import dataclass
 import logging
 from pathlib import Path
+from typing import cast
 
+import datasets
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
@@ -9,11 +12,11 @@ from omegaconf import DictConfig
 import pandas as pd
 import pickle
 from scipy.io import loadmat
-from sklearn.model_selection import KFold, GridSearchCV
+import torch
 from tqdm.auto import tqdm
 import yaml
 
-from src.datasets.speech_equivalence import SpeechEquivalenceDataset
+from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.encoding.ecog import timit as timit_encoding
 from src.encoding.ecog import get_electrode_df
 from src.models.integrator import load_or_compute_embeddings
@@ -22,47 +25,66 @@ from src.models.integrator import load_or_compute_embeddings
 L = logging.getLogger(__name__)
 
 
-def load_model_embeddings(config, data_spec):
-    assert len(config.feature_sets.model_features) == 1
-    model_feature_spec = config.feature_sets.model_features[0]
-    model_dir = Path(f"outputs/models/{model_feature_spec.model}")
-    with open(model_dir / ".hydra" / "config.yaml") as f:
-        model_config = yaml.safe_load(f)
+@dataclass
+class ContrastiveModelSnapshot:
+    """
+    Snapshot of the training environment and output of a contrastive model used
+    for brain encoding.
+    """
+    # TODO would be nicer to scaffold with Hydra instantiate :)
 
-    # TODO clean up
-    equiv_dataset_path = f"data/timit_equivalence_{model_config['model']['base_model_ref'].replace('/', '-')}_{model_config['model']['base_model_layer']}-phoneme-{model_config['equivalence']['num_frames_per_phoneme']}.pkl"
-    with open(equiv_dataset_path, "rb") as f:
-        equiv_dataset: SpeechEquivalenceDataset = pickle.load(f)
+    feature_spec: DictConfig
+    dataset: datasets.Dataset
+    hidden_states: SpeechHiddenStateDataset
+    equiv_dataset: SpeechEquivalenceDataset
+    embeddings: np.ndarray
 
-    model_embeddings = load_or_compute_embeddings(
-        None, equiv_dataset,
-        model_dir=f"outputs/models/{model_feature_spec.model}",
-        equiv_dataset_path=equiv_dataset_path)
-    return model_config, model_embeddings, equiv_dataset
+    @classmethod
+    def from_config(cls, config: DictConfig, feature_spec: DictConfig):
+        dataset = cast(datasets.Dataset, datasets.load_from_disk(config.dataset_path))
+
+        with open(feature_spec.equivalence_path, "rb") as f:
+            equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
+        with open(feature_spec.hidden_state_path, "rb") as f:
+            hidden_states: SpeechHiddenStateDataset = torch.load(f)
+        embeddings = np.load(feature_spec.embeddings_path)
+
+        return cls(
+            feature_spec=feature_spec,
+            dataset=dataset,
+            hidden_states=hidden_states,
+            equiv_dataset=equiv_dataset,
+            embeddings=embeddings
+        )
+
+    def __post_init__(self):
+        assert self.embeddings.shape[0] == self.hidden_states.num_frames
 
 
-def load_and_align_model_embeddings(config, data_spec, out):
+def load_and_align_model_embeddings(config, out):
     """
     Load model embeddings of TIMIT stimuli and align them with the
     corresponding ECoG responses / baseline features.
     """
-    model_config, model_embeddings, equiv_dataset = load_model_embeddings(config, data_spec)
-    # Load originating dataset
-    dataset = instantiate(model_config['dataset'], processor=None)["train"]
+
+    if len(config.feature_sets.model_features) != 1:
+        raise NotImplementedError("Only one model feature set is supported")
+    model = ContrastiveModelSnapshot.from_config(
+        config, next(iter(config.feature_sets.model_features.values())))
 
     out_all_names = {out_i["name"] for out_i in out}
 
     name_to_item_idx, name_to_frame_bounds, compression_ratios = {}, {}, {}
-    def process_item(item, idx):
+    def process_item(item):
         name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
         if name in out_all_names:
-            name_to_item_idx[name] = idx
+            name_to_item_idx[name] = item["idx"]
 
-            frame_start, frame_end = equiv_dataset.hidden_state_dataset.frames_by_item[idx]
+            frame_start, frame_end = model.hidden_states.frames_by_item[item["idx"]]
             name_to_frame_bounds[name] = (frame_start, frame_end)
             compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
 
-    dataset.map(process_item, with_indices=True)
+    model.dataset.map(process_item)
 
     # Make sure that ECoG data and model embeddings are of approximately the same length,
     # modulo sampling differences. Compute length of each sentence in seconds according
@@ -75,7 +97,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
     
     # Resample and align model embeddings to be the same size
     # as the ECoG data
-    n_model_dims = model_embeddings.shape[1]
+    n_model_dims = model.embeddings.shape[1]
     embedding_misses = 0
     for i, out_i in enumerate(out):
         name = out_i["name"]
@@ -97,7 +119,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
         # TODO make this logic customizable
 
         # Find annotated unit ends relative to start frame
-        unit_ends = (equiv_dataset.Q[frame_start:frame_end] != -1).nonzero(as_tuple=True)[0]
+        unit_ends = (model.equiv_dataset.Q[frame_start:frame_end] != -1).nonzero(as_tuple=True)[0]
         # Find unit starts. NB this only works assuming 1 annotated frame per unit (phoneme)
         unit_starts = np.concatenate([[0], unit_ends[:-1] + 1])
 
@@ -108,7 +130,7 @@ def load_and_align_model_embeddings(config, data_spec, out):
             # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
             unit_start_ecog = int((0.5 + unit_start_secs) * 100)
 
-            embedding_data[:, unit_start_ecog] = model_embeddings[frame_start:frame_start + unit_end].mean(axis=0)
+            embedding_data[:, unit_start_ecog] = model.embeddings[frame_start:frame_start + unit_end].mean(axis=0)
 
         out_i["model_embedding"] = embedding_data
 
@@ -139,7 +161,7 @@ def prepare_xy(config, data_spec) -> tuple[np.ndarray, np.ndarray, list[str], li
 
     # add model embeddings to out
     if getattr(config.feature_sets, "model_features", None):
-        out = load_and_align_model_embeddings(config, data_spec, out)
+        out = load_and_align_model_embeddings(config, out)
         feature_sets.append("model_embedding")
 
         center_features.append(False)

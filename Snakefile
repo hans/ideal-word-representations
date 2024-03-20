@@ -1,3 +1,5 @@
+import itertools
+from typing import Any
 import yaml
 
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
@@ -25,6 +27,9 @@ ALL_MODEL_NOTEBOOKS = [
 
 
 ALL_ENCODING_SUBJECTS = [data_spec['subject'] for data_spec in config["encoding"]["data"]]
+ENCODING_DATASET = "timit"
+
+DEFAULT_PHONEME_EQUIVALENCE = "phoneme_10frames"
 
 
 def select_gpu_device(wildcards, resources):
@@ -49,6 +54,9 @@ def hydra_param(obj):
     if isinstance(obj, snakemake.io.Namedlist):
         obj = list(obj)
     return yaml.safe_dump(obj, default_flow_style=True, width=float("inf")).strip()
+
+def join_hydra_overrides(overrides: dict[str, Any]):
+    return " ".join([f"+{k}={v}" for k, v in overrides.items()])
 
 
 # Download and convert fairseq wav2vec2 model pretrained on AudioSet data
@@ -148,12 +156,17 @@ rule prepare_equivalence_dataset:
             dataset.processed_data_dir={input.timit_data}
         """)
 
-def get_equivalence_dataset(wildcards):
-    if wildcards.equivalence_classer == "random":
+
+def _get_equivalence_dataset(dataset: str, base_model_name: str, equivalence_classer: str) -> str:
+    if equivalence_classer == "random":
         # default to phoneme-level
-        return f"outputs/equivalence_datasets/{wildcards.dataset}/{wildcards.base_model_name}/phoneme/equivalence.pkl"
+        return f"outputs/equivalence_datasets/{dataset}/{base_model_name}/{DEFAULT_PHONEME_EQUIVALENCE}/equivalence.pkl"
     else:
-        return f"outputs/equivalence_datasets/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.equivalence_classer}/equivalence.pkl"
+        return f"outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
+
+
+def get_equivalence_dataset(wildcards):
+    return _get_equivalence_dataset(wildcards.dataset, wildcards.base_model_name, wildcards.equivalence_classer)
 
 
 rule run:
@@ -189,7 +202,7 @@ rule run:
 
 
 # Run train without actually training -- used to generate random model weights
-NO_TRAIN_DEFAULT_EQUIVALENCE = "phoneme_10frames"
+NO_TRAIN_DEFAULT_EQUIVALENCE = DEFAULT_PHONEME_EQUIVALENCE
 rule run_no_train:
     input:
         base_model_config = "conf/base_model/{base_model_name}.yaml",
@@ -321,27 +334,41 @@ rule run_all_notebooks:
                 model_spec=MODEL_SPEC_LIST, notebook=ALL_MODEL_NOTEBOOKS)
 
 
-def get_embeddings_for_synthetic_encoder_evaluation(wildcards, return_list=True):
-    evaluation = config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]
+def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) -> list[str]:
+    with open(f"conf_encoder/feature_sets/{feature_set}.yaml", "r") as f:
+        model_config = yaml.safe_load(f)
 
-    paths = {}
-    for model_ref in evaluation["models"]:
-        with open(f"conf_encoder/feature_sets/{model_ref}.yaml", "r") as f:
-            model_config = yaml.safe_load(f)
+    ret = {
+        "hidden_states": [
+            f"outputs/hidden_states/{dataset}/{feat['base_model']}/hidden_states.pkl"
+            for _, feat in model_config.get("model_features", {}).items()
+        ],
 
-        for feat in model_config.get("model_features", []):
-            paths[model_ref] = f"outputs/model_embeddings/{wildcards.dataset}/{feat['base_model']}/{feat['model']}/{feat['equivalence']}/embeddings.npy"
+        "embeddings": [
+            f"outputs/model_embeddings/{dataset}/{feat['base_model']}/{feat['model']}/{feat['equivalence']}/embeddings.npy"
+            for _, feat in model_config.get("model_features", {}).items()
+        ],
+
+        "equivalences": [
+            _get_equivalence_dataset(dataset, feat['base_model'], feat['equivalence'])
+            for _, feat in model_config.get("model_features", {}).items()
+        ]
+    }
 
     if return_list:
-        return list(paths.values())
+        return list(itertools.chain.from_iterable(ret.values()))
     else:
-        return paths
+        return ret
+
 
 rule estimate_synthetic_encoder:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
         hidden_states = "outputs/hidden_states/{dataset}/{target_model_name}/hidden_states.pkl",
-        embeddings = get_embeddings_for_synthetic_encoder_evaluation,
+        computed_inputs = lambda wildcards: itertools.chain.from_iterable(
+            _get_inputs_for_encoding(feature_set, wildcards.dataset, return_list=True)
+            for feature_set in config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]["models"]
+        ),
         notebook = "notebooks/synthetic_encoding/feature_selection.ipynb"
 
     output:
@@ -352,9 +379,11 @@ rule estimate_synthetic_encoder:
         evaluation = config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]
 
         # Recompute embedding paths with keys here
-        embedding_paths = get_embeddings_for_synthetic_encoder_evaluation(wildcards, return_list=False)
-        # sanity check -- should match snakemake inputs
-        assert set(embedding_paths.values()) == set(input.embeddings)
+        embedding_paths = {}
+        for model_name in evaluation["models"]:
+            inputs = _get_inputs_for_encoding(model_name, wildcards.dataset)
+            assert len(inputs["embeddings"]) == 1
+            embedding_paths[model_name] = inputs["embeddings"][0]
 
         params = {
             "dataset_path": input.dataset,
@@ -402,34 +431,54 @@ rule estimate_noise_ceiling:
 
 
 rule estimate_encoder:
+    input:
+        dataset = "outputs/preprocessed_data/{dataset}",
+        computed_inputs = lambda wildcards: _get_inputs_for_encoding(
+            wildcards.feature_sets, wildcards.dataset, return_list=True)
     output:
-        model_dir = directory("outputs/encoders/{feature_sets}/{subject}"),
-        electrodes = "outputs/encoders/{feature_sets}/{subject}/electrodes.csv",
-        scores = "outputs/encoders/{feature_sets}/{subject}/scores.csv",
-        predictions = "outputs/encoders/{feature_sets}/{subject}/predictions.npy",
-        coefs = "outputs/encoders/{feature_sets}/{subject}/coefs.csv"
+        model_dir = directory("outputs/encoders/{dataset}/{feature_sets}/{subject}"),
+        electrodes = "outputs/encoders/{dataset}/{feature_sets}/{subject}/electrodes.csv",
+        scores = "outputs/encoders/{dataset}/{feature_sets}/{subject}/scores.csv",
+        predictions = "outputs/encoders/{dataset}/{feature_sets}/{subject}/predictions.npy",
+        coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.csv"
 
     run:
+        encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
+        assert len(encoder_inputs["embeddings"]) == len(encoder_inputs["equivalences"]) \
+            == len(encoder_inputs["hidden_states"]) == 1
+
         data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
         if len(data_spec) == 0:
             raise ValueError(f"No data for subject {wildcards.subject}")
+
+        # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
+        overrides = {}
+        for feature_set, embedding_path, equivalence_path, hidden_state_path in zip(
+                [wildcards.feature_sets], encoder_inputs["embeddings"],
+                encoder_inputs["equivalences"], encoder_inputs["hidden_states"]):
+            overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
+            overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
+            overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
+        overrides_str = join_hydra_overrides(overrides)
 
         shell("""
         python estimate_encoder.py \
             hydra.run.dir={output.model_dir} \
             feature_sets={wildcards.feature_sets} \
+            +dataset_path={input.dataset} \
+            {overrides_str} \
             +data='{data_spec}'
         """)
 
 
 rule compare_encoder_within_subject:
     input:
-        model1_output = "outputs/encoders/{comparison_model1}/{subject}/scores.csv",
-        model2_output = "outputs/encoders/{comparison_model2}/{subject}/scores.csv"
+        model1_output = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/scores.csv",
+        model2_output = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/scores.csv"
 
     output:
-        notebook = "outputs/encoder_comparison/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
-        csv = "outputs/encoder_comparison/{subject}/{comparison_model2}-{comparison_model1}.csv"
+        notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
+        csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.csv"
 
     shell:
         """
@@ -444,5 +493,5 @@ rule compare_encoder_within_subject:
 
 rule compare_all_encoders_within_subject:
     input:
-        lambda _: [f"outputs/encoder_comparison/{subject}/{comp['model2']}-{comp['model1']}.csv"
-                  for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
+        lambda _: [f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}-{comp['model1']}.csv"
+                   for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
