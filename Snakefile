@@ -452,7 +452,7 @@ rule estimate_encoder:
     run:
         encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
         assert len(encoder_inputs["embeddings"]) == len(encoder_inputs["equivalences"]) \
-            == len(encoder_inputs["hidden_states"]) == 1
+            == len(encoder_inputs["hidden_states"])
 
         data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
         if len(data_spec) == 0:
@@ -460,14 +460,15 @@ rule estimate_encoder:
 
         # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
         overrides = {}
-        for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
-                [wildcards.feature_sets], encoder_inputs["embeddings"],
-                encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
-                encoder_inputs["state_spaces"]):
-            overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
-            overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
-            overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
-            overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
+        if len(encoder_inputs["embeddings"]) > 0:
+            for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
+                    [wildcards.feature_sets], encoder_inputs["embeddings"],
+                    encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
+                    encoder_inputs["state_spaces"]):
+                overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
+                overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
+                overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
+                overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
         overrides_str = join_hydra_overrides(overrides)
 
         shell("""
