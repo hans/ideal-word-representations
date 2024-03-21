@@ -483,8 +483,11 @@ rule estimate_encoder:
 
 rule compare_encoder_within_subject:
     input:
-        model1_output = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/scores.csv",
-        model2_output = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/scores.csv"
+        model1_scores = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/scores.csv",
+        model2_scores = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/scores.csv",
+
+        model1_coefs = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/coefs.csv",
+        model2_coefs = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/coefs.csv",
 
     output:
         notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
@@ -497,6 +500,10 @@ rule compare_encoder_within_subject:
             -p subject {wildcards.subject} \
             -p model1 {wildcards.comparison_model1} \
             -p model2 {wildcards.comparison_model2} \
+            -p model1_scores_path {input.model1_scores} \
+            -p model2_scores_path {input.model2_scores} \
+            -p model1_coefs_path {input.model1_coefs} \
+            -p model2_coefs_path {input.model2_coefs} \
             -p output_csv {output.csv}
         """
 
