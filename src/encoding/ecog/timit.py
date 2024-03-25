@@ -137,7 +137,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
     # Make sure that ECoG data and model embeddings are of approximately the same length,
     # modulo sampling differences. Compute length of each sentence in seconds according
     # to two sources:
-    comparisons = [(out_i["resp"].shape[1] / 100 - 1, # remove padding
+    comparisons = [(out_i["resp"].shape[1] / out_i["dataf"] - out_i["befaft"].sum(), # remove padding
                     (name_to_frame_bounds[out_i['name']][1] - name_to_frame_bounds[out_i['name']][0]) / compression_ratios[out_i["name"]] / 16000)
                    for out_i in out if out_i["name"] in name_to_frame_bounds]
     np.testing.assert_allclose(*zip(*comparisons), atol=0.05,
@@ -169,8 +169,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
             # Compute aligned ECoG sample
             # magic numbers: 16 KHz audio sampling rate
             unit_start_secs = (unit_start - frame_start) / compression_ratios[name] / 16000
-            # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
-            unit_start_ecog = int((0.5 + unit_start_secs) * 100)
+            unit_start_ecog = int((out_i["befaft"][0] + unit_start_secs) * out_i["dataf"])
 
             # Scatter an impulse predictor at the sample aligned to the onset of the unit
             unit_embedding = None
