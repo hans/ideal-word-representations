@@ -46,7 +46,7 @@ def add_details_to_out(out, sentdetV, infopath, corpus, cs):
 
         # Drop first and last rows
         pitch_df = pd.read_csv(pitch_file, sep='\t', header=None, na_values=["--undefined--"]) \
-            .iloc[1:-1][3].fillna(0.)
+            .iloc[1:-1][3].astype(float).fillna(0.)
         # Pad with zeros by referencing stress data
         before_pad = int(np.floor((len(trial["stress"]) - len(pitch_df)) / 2))
         after_pad = int(np.ceil((len(trial["stress"]) - len(pitch_df)) / 2))
