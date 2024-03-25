@@ -192,7 +192,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
     return out
 
 
-def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
+def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]], list[tuple[int, int]]]:
     out = prepare_out_file(config, data_spec)
     feature_sets = config.feature_sets.baseline_features[:]
 
@@ -207,12 +207,12 @@ def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, n
         center_features.append(False)
         scale_features.append(False)
 
-    X, Y, feature_names, feature_shapes = prepare_strf_xy(
+    X, Y, feature_names, feature_shapes, trial_onsets = prepare_strf_xy(
         out, feature_sets, data_spec.subject,
         center_features=np.array(center_features),
         scale_features=np.array(scale_features))
     
-    return X, Y, feature_names, feature_shapes
+    return X, Y, feature_names, feature_shapes, trial_onsets
 
 
 def add_details_to_out(out: OutFile, sentdetV, infopath, corpus, cs) -> OutFileWithAnnotations:
@@ -368,7 +368,17 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
                     fit_response_dimensions: Optional[list[int]] = None,
                     center_features: Union[bool, np.ndarray] = True,
                     scale_features: Union[bool, np.ndarray] = True,
-                    response_field="resp") -> tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...]]:
+                    response_field="resp") -> tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...], np.ndarray]:
+    """
+    Prepare TRF design matrix.
+
+    Returns:
+    - X: np.ndarray, shape (n_samples, n_features)
+    - Y: np.ndarray, shape (n_samples, n_outputs)
+    - feature_names: list[str], length n_features
+    - feature_shapes: tuple[int, ...], length n_features
+    - trial_onsets: np.ndarray, shape (n_trials, 2), trial index and sample at which this trial has onset
+    """
     response_field = response_field or 'resp'
 
     if fit_response_dimensions is None:
@@ -404,7 +414,8 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     fs = out[0]["soundf"]
     # assert dataf == fs, f"Neural and sound sampling rate must match ({dataf} Hz != {fs} Hz)"
 
-    X, Y, feature_names, feature_shapes = [], [], None, None
+    X, Y, trial_names, trial_idxs = [], [], [], []
+    feature_names, feature_shapes =  None, None
     for i, trial in enumerate(out):
         # TODO what to do about repeats?
         Yi = trial[response_field]
@@ -468,6 +479,8 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
 
         X.append(Xi)
         Y.append(Yi)
+        trial_names.append(trial["name"])
+        trial_idxs.append(i)
 
         if feature_names is None:
             feature_names = feature_names_i
@@ -478,6 +491,9 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
 
     # TODO sound onset -- strf_makeXtimeLag:79
     # TODO boundaries
+    # record onset of each trial in concatenated array
+    trial_onsets = np.concatenate([[0], np.cumsum([Xi.shape[0] for Xi in X])[:-1]])
+    trial_onsets = np.stack([np.array(trial_idxs), trial_onsets], axis=1)
     X = np.concatenate(X)
     Y = np.concatenate(Y, axis=1).T
     
@@ -503,7 +519,7 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     Y -= Y.mean(axis=0)
     Y /= (Y.max(axis=0) - Y.min(axis=0))
 
-    return X, Y, feature_names, feature_shapes
+    return X, Y, feature_names, feature_shapes, trial_onsets
 
 
 def concat_xy(all_xy: list[tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...]]]):
