@@ -1,22 +1,222 @@
+from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Optional, Union
+from typing import cast, Optional, Union, TypeAlias
 
-from mne.decoding import ReceptiveField, TimeDelayingRidge
+import datasets
+import mat73
 import numpy as np
+from omegaconf import DictConfig
 import pandas as pd
 from scipy.io import loadmat
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import KFold, GridSearchCV
+import torch
 from tqdm.auto import tqdm
 
+from src.analysis.state_space import StateSpaceAnalysisSpec
+from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.encoding.ecog import TemporalReceptiveField
 
 
 L = logging.getLogger(__name__)
 
+# processed struct from matlab pipeline
+OutFile: TypeAlias = list[dict[str, np.ndarray]]
+OutFileWithAnnotations: TypeAlias = list[dict[str, np.ndarray]]
 
-def add_details_to_out(out, sentdetV, infopath, corpus, cs):
+
+@dataclass
+class ContrastiveModelSnapshot:
+    """
+    Snapshot of the training environment and output of a contrastive model used
+    for brain encoding.
+    """
+    # TODO would be nicer to scaffold with Hydra instantiate :)
+
+    feature_spec: DictConfig
+    dataset: datasets.Dataset
+    hidden_states: SpeechHiddenStateDataset
+    equiv_dataset: SpeechEquivalenceDataset
+    state_space: StateSpaceAnalysisSpec
+    embeddings: np.ndarray
+
+    @classmethod
+    def from_config(cls, config: DictConfig, feature_spec: DictConfig):
+        dataset = cast(datasets.Dataset, datasets.load_from_disk(config.dataset_path))
+
+        with open(feature_spec.equivalence_path, "rb") as f:
+            equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
+        with open(feature_spec.hidden_state_path, "rb") as f:
+            hidden_states: SpeechHiddenStateDataset = torch.load(f)
+        with open(feature_spec.state_space_path, "rb") as f:
+            state_space: StateSpaceAnalysisSpec = torch.load(f)[feature_spec.state_space]
+        embeddings = np.load(feature_spec.embeddings_path)
+
+        return cls(
+            feature_spec=feature_spec,
+            dataset=dataset,
+            hidden_states=hidden_states,
+            equiv_dataset=equiv_dataset,
+            state_space=state_space,
+            embeddings=embeddings
+        )
+
+    def __post_init__(self):
+        assert self.embeddings.shape[0] == self.hidden_states.num_frames
+
+
+def load_out_file(path) -> dict[str, OutFile]:
+    """
+    Load preprocessed ECoG data, accounting for different Matlab export
+    formats.
+    """
+    try:
+        return loadmat(path, simplify_cells=True)
+    except NotImplementedError:
+        # Matlab >= 7.3 format. Load using `mat73` and simulate the
+        # simplify_cells functionality for the fields we care about
+        data = mat73.loadmat(path)
+
+        # Simplify cell representation
+        target_cells = ["name", "resp", "dataf", "befaft"]
+        ret = []
+        for i in range(len(data["out"]["resp"])):
+            ret.append({
+                cell: data["out"][cell][i] for cell in target_cells
+            })
+
+        return {"out": ret}
+
+
+def prepare_out_file(config: DictConfig, data_spec: DictConfig) -> OutFileWithAnnotations:
+    data_dir = Path(config.corpus.paths.data_path) / data_spec.subject / config.corpus.name / "block_z"
+
+    if data_spec.block is None:
+        full_glob = f"{data_spec.subject}_*_{config.corpus.paths.out_file_glob}"
+    else:
+        full_glob = f"{data_spec.subject}_{data_spec.block}_{config.corpus.paths.out_file_glob}"
+    outfile = list(data_dir.glob(full_glob))
+    assert len(outfile) == 1
+
+    cout = load_out_file(outfile[0])
+    out = cout["out"]
+
+    # add sentence details to out
+    out = add_details_to_out(out, config.corpus.sentdetV,
+                             config.corpus.paths.info_path,
+                             config.corpus.name,
+                             data_spec.subject)
+
+    return out
+
+
+def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
+    """
+    Load model embeddings of TIMIT stimuli and align them with the
+    corresponding ECoG responses / baseline features.
+    """
+
+    if len(config.feature_sets.model_features) != 1:
+        raise NotImplementedError("Only one model feature set is supported")
+    feature_spec = next(iter(config.feature_sets.model_features.values()))
+    model = ContrastiveModelSnapshot.from_config(config, feature_spec)
+
+    out_all_names = {out_i["name"] for out_i in out}
+    name_to_item_idx, name_to_frame_bounds, compression_ratios = {}, {}, {}
+    def process_item(item):
+        name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
+        if name in out_all_names:
+            name_to_item_idx[name] = item["idx"]
+
+            frame_start, frame_end = model.hidden_states.frames_by_item[item["idx"]]
+            name_to_frame_bounds[name] = (frame_start, frame_end)
+            compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
+    model.dataset.map(process_item)
+
+    # Make sure that ECoG data and model embeddings are of approximately the same length,
+    # modulo sampling differences. Compute length of each sentence in seconds according
+    # to two sources:
+    comparisons = [(out_i["resp"].shape[1] / 100 - 1, # remove padding
+                    (name_to_frame_bounds[out_i['name']][1] - name_to_frame_bounds[out_i['name']][0]) / compression_ratios[out_i["name"]] / 16000)
+                   for out_i in out if out_i["name"] in name_to_frame_bounds]
+    np.testing.assert_allclose(*zip(*comparisons), atol=0.05,
+                               err_msg="ECoG data and model embeddings should be of approximately the same length")
+
+    # Scatter model embeddings into a time series aligned with ECoG data.
+    n_model_dims = model.embeddings.shape[1]
+    embedding_misses = 0
+    embedding_scatter_hits = 0
+    for i, out_i in enumerate(tqdm(out, desc="Aligning model embeddings")):
+        name = out_i["name"]
+
+        n_ecog_samples = out_i["resp"].shape[1]
+        embedding_data = np.zeros((n_model_dims, n_ecog_samples))
+        out_i["model_embedding"] = embedding_data
+
+        try:
+            item_idx = name_to_item_idx[name]
+            frame_start, frame_end = name_to_frame_bounds[name]
+        except KeyError:
+            L.warning(f"Skipping {name} as it is not in the embedding set")
+            embedding_misses += 1
+            continue
+
+        # Now scatter model embeddings according to the spans in the state
+        # space specification
+        unit_spans = model.state_space.get_trajectories_in_span(frame_start, frame_end)
+        for unit_start, unit_end, _, _ in unit_spans:
+            # Compute aligned ECoG sample
+            # magic numbers: 16 KHz audio sampling rate
+            unit_start_secs = (unit_start - frame_start) / compression_ratios[name] / 16000
+            # magic numbers: 0.5 seconds of before-padding; 100 Hz sampling rate
+            unit_start_ecog = int((0.5 + unit_start_secs) * 100)
+
+            # Scatter an impulse predictor at the sample aligned to the onset of the unit
+            unit_embedding = None
+            if feature_spec.featurization == "last_frame":
+                unit_embedding = model.embeddings[unit_end]
+            elif feature_spec.featurization == "mean":
+                unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
+            else:
+                raise ValueError(f"Unknown featurization {feature_spec.featurization}")
+
+            embedding_data[:, unit_start_ecog] = unit_embedding
+            embedding_scatter_hits += 1
+
+        out_i["model_embedding"] = embedding_data
+
+    if embedding_misses > 0:
+        L.warning(f"Skipped {embedding_misses} sentences ({embedding_misses / len(out) * 100}%) as they were not in the embedding set")
+    L.info(f"Scattered model embeddings for {embedding_scatter_hits} {feature_spec.state_space} units")
+
+    return out
+
+
+def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]]]:
+    out = prepare_out_file(config, data_spec)
+    feature_sets = config.feature_sets.baseline_features[:]
+
+    center_features = [True] * len(feature_sets)
+    scale_features = [True] * len(feature_sets)
+
+    # add model embeddings to out
+    if getattr(config.feature_sets, "model_features", None):
+        out = load_and_align_model_embeddings(config, out)
+        feature_sets.append("model_embedding")
+
+        center_features.append(False)
+        scale_features.append(False)
+
+    X, Y, feature_names, feature_shapes = prepare_strf_xy(
+        out, feature_sets, data_spec.subject,
+        center_features=np.array(center_features),
+        scale_features=np.array(scale_features))
+    
+    return X, Y, feature_names, feature_shapes
+
+
+def add_details_to_out(out: OutFile, sentdetV, infopath, corpus, cs) -> OutFileWithAnnotations:
     frmVows = set();  allFrm = []; vowId=None; subjFrm=None;
     if corpus != "timit":
         raise NotImplementedError("Only timit is supported")
@@ -164,7 +364,8 @@ def add_details_to_out(out, sentdetV, infopath, corpus, cs):
     return out
 
 
-def prepare_strf_xy(out, feature_sets: list[str], subject_id: str,
+def prepare_strf_xy(out: OutFileWithAnnotations,
+                    feature_sets: list[str], subject_id: str,
                     fit_response_dimensions: Optional[list[int]] = None,
                     center_features: Union[bool, np.ndarray] = True,
                     scale_features: Union[bool, np.ndarray] = True,
