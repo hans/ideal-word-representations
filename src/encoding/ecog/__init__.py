@@ -246,11 +246,6 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
 
         # Pad if necessary
         epoch_length_i = epoch.shape[1]
-        if epoch_length_i == 0:
-            print(f"Skipping epoch {span['name']} {span['label_idx']} {span['instance_idx']}")
-            print("\t", start_i, end_i, "//", epoch_start_i, epoch_end_i, "//", data_i.shape)
-            print("\t", aligned_dataset.out[span["trial_idx"]]["name"],
-                  aligned_dataset.out[span["trial_idx"]]["resp"].shape)
         if epoch_length_i < epoch_length:
             pad_width = ((0, 0), (0, epoch_length - epoch_length_i))
             epoch = np.pad(epoch, pad_width, mode=pad_mode, constant_values=pad_values)
