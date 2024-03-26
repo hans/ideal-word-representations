@@ -1,9 +1,7 @@
-from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import cast, Optional, Union, TypeAlias
+from typing import cast, Optional, Union
 
-import datasets
 import mat73
 import numpy as np
 from omegaconf import DictConfig
@@ -11,59 +9,12 @@ import pandas as pd
 from scipy.io import loadmat
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import KFold, GridSearchCV
-import torch
 from tqdm.auto import tqdm
 
-from src.analysis.state_space import StateSpaceAnalysisSpec
-from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
-from src.encoding.ecog import TemporalReceptiveField
+from src.encoding.ecog import TemporalReceptiveField, OutFile, OutFileWithAnnotations, ContrastiveModelSnapshot, AlignedECoGDataset
 
 
 L = logging.getLogger(__name__)
-
-# processed struct from matlab pipeline
-OutFile: TypeAlias = list[dict[str, np.ndarray]]
-OutFileWithAnnotations: TypeAlias = list[dict[str, np.ndarray]]
-
-
-@dataclass
-class ContrastiveModelSnapshot:
-    """
-    Snapshot of the training environment and output of a contrastive model used
-    for brain encoding.
-    """
-    # TODO would be nicer to scaffold with Hydra instantiate :)
-
-    feature_spec: DictConfig
-    dataset: datasets.Dataset
-    hidden_states: SpeechHiddenStateDataset
-    equiv_dataset: SpeechEquivalenceDataset
-    state_space: StateSpaceAnalysisSpec
-    embeddings: np.ndarray
-
-    @classmethod
-    def from_config(cls, config: DictConfig, feature_spec: DictConfig):
-        dataset = cast(datasets.Dataset, datasets.load_from_disk(config.dataset_path))
-
-        with open(feature_spec.equivalence_path, "rb") as f:
-            equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
-        with open(feature_spec.hidden_state_path, "rb") as f:
-            hidden_states: SpeechHiddenStateDataset = torch.load(f)
-        with open(feature_spec.state_space_path, "rb") as f:
-            state_space: StateSpaceAnalysisSpec = torch.load(f)[feature_spec.state_space]
-        embeddings = np.load(feature_spec.embeddings_path)
-
-        return cls(
-            feature_spec=feature_spec,
-            dataset=dataset,
-            hidden_states=hidden_states,
-            equiv_dataset=equiv_dataset,
-            state_space=state_space,
-            embeddings=embeddings
-        )
-
-    def __post_init__(self):
-        assert self.embeddings.shape[0] == self.hidden_states.num_frames
 
 
 def load_out_file(path) -> dict[str, OutFile]:
@@ -122,26 +73,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
     feature_spec = next(iter(config.feature_sets.model_features.values()))
     model = ContrastiveModelSnapshot.from_config(config, feature_spec)
 
-    out_all_names = {out_i["name"] for out_i in out}
-    name_to_item_idx, name_to_frame_bounds, compression_ratios = {}, {}, {}
-    def process_item(item):
-        name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
-        if name in out_all_names:
-            name_to_item_idx[name] = item["idx"]
-
-            frame_start, frame_end = model.hidden_states.frames_by_item[item["idx"]]
-            name_to_frame_bounds[name] = (frame_start, frame_end)
-            compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
-    model.dataset.map(process_item)
-
-    # Make sure that ECoG data and model embeddings are of approximately the same length,
-    # modulo sampling differences. Compute length of each sentence in seconds according
-    # to two sources:
-    comparisons = [(out_i["resp"].shape[1] / out_i["dataf"] - out_i["befaft"].sum(), # remove padding
-                    (name_to_frame_bounds[out_i['name']][1] - name_to_frame_bounds[out_i['name']][0]) / compression_ratios[out_i["name"]] / 16000)
-                   for out_i in out if out_i["name"] in name_to_frame_bounds]
-    np.testing.assert_allclose(*zip(*comparisons), atol=0.05,
-                               err_msg="ECoG data and model embeddings should be of approximately the same length")
+    aligned_dataset = AlignedECoGDataset(model, out)
 
     # Scatter model embeddings into a time series aligned with ECoG data.
     n_model_dims = model.embeddings.shape[1]
@@ -155,8 +87,8 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         out_i["model_embedding"] = embedding_data
 
         try:
-            item_idx = name_to_item_idx[name]
-            frame_start, frame_end = name_to_frame_bounds[name]
+            item_idx = aligned_dataset.name_to_item_idx[name]
+            frame_start, frame_end = aligned_dataset.name_to_frame_bounds[name]
         except KeyError:
             L.warning(f"Skipping {name} as it is not in the embedding set")
             embedding_misses += 1
@@ -168,7 +100,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         for unit_start, unit_end, _, _ in unit_spans:
             # Compute aligned ECoG sample
             # magic numbers: 16 KHz audio sampling rate
-            unit_start_secs = (unit_start - frame_start) / compression_ratios[name] / 16000
+            unit_start_secs = (unit_start - frame_start) / aligned_dataset.compression_ratios[name] / 16000
             unit_start_ecog = int((out_i["befaft"][0] + unit_start_secs) * out_i["dataf"])
 
             # Scatter an impulse predictor at the sample aligned to the onset of the unit
