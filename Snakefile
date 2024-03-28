@@ -407,6 +407,13 @@ rule estimate_synthetic_encoder:
             -y "{yaml.safe_dump(params)}"
         """)
 
+rule estimate_all_synthetic_encoders:
+    input:
+        lambda wildcards: [f"outputs/synthetic_encoders/{dataset}/{target_model}/{evaluation_name}/"
+                           for evaluation_name, evaluation in config["synthetic_encoding"]["evaluations"].items()
+                           for dataset in evaluation["datasets"]
+                           for target_model in evaluation["target_models"]]
+
 
 def make_encoder_data_spec(include_subjects=None):
     data_spec = config["encoding"]["data"]
