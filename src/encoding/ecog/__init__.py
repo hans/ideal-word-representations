@@ -177,6 +177,7 @@ class AlignedECoGDataset:
 def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                          state_space_name: str,
                          epoch_window: tuple[float, float] = (-0.1, 0.5),
+                         baseline_window: Optional[tuple[float, float]] = None,
                          data: Optional[dict[str, np.ndarray]] = None,
                          data_is_padded: bool = True,
                          subset_electrodes: Optional[list[int]] = None,
@@ -189,6 +190,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         aligned_dataset: AlignedECoGDataset
         state_space_name: str
         epoch_window: tuple[float, float]
+        baseline_window: optional tuple[float, float]
         data: dict[str, np.ndarray]
             Map from stimulus name to data (ECoG, residuals, etc.) of shape n_channels * n_samples
         data_is_padded: bool
@@ -196,11 +198,16 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         subset_electrodes: list[int]
         pad_mode: str
         pad_values
-        return_df: bool"""
+        return_df: bool
+    """
     # convert epoch window to ECoG samples
     epoch_window = (int(epoch_window[0] * aligned_dataset.ecog_sfreq),
                     int(epoch_window[1] * aligned_dataset.ecog_sfreq))
     epoch_length = epoch_window[1] - epoch_window[0]
+
+    if baseline_window is not None:
+        baseline_window = (int(baseline_window[0] * aligned_dataset.ecog_sfreq),
+                           int(baseline_window[1] * aligned_dataset.ecog_sfreq))
 
     # Check shapes
     if data is not None:
@@ -243,6 +250,12 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
 
         if subset_electrodes is not None:
             epoch = epoch[subset_electrodes]
+
+        if baseline_window is not None:
+            baseline_start_i = max(0, start_i + baseline_window[0])
+            baseline_end_i = min(data_i.shape[1], start_i + baseline_window[1])
+            baseline = data_i[:, baseline_start_i:baseline_end_i]
+            epoch -= baseline.mean(axis=1, keepdims=True)
 
         # Pad if necessary
         epoch_length_i = epoch.shape[1]
