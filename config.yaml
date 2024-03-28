@@ -130,6 +130,11 @@ synthetic_encoding:
       datasets:
         - timit
 
+      subsample_strategies:
+        - all
+        - multisyllabic
+        - monosyllabic
+
       target_models:
         - w2v2_0
         - w2v2_1
@@ -143,6 +148,9 @@ synthetic_encoding:
         - w2v2_9
         - w2v2_10
         - w2v2_11
+        - w2v2-large_0
+        - w2v2-large_11
+        - w2v2-large_20
 
       models:
         - phoneme
@@ -159,6 +167,11 @@ synthetic_encoding:
       datasets:
         - timit
 
+      subsample_strategies:
+        - all
+        - multisyllabic
+        - monosyllabic
+
       target_models:
         - w2v2_0
         - w2v2_1
@@ -172,6 +185,9 @@ synthetic_encoding:
         - w2v2_9
         - w2v2_10
         - w2v2_11
+        - w2v2-large_0
+        - w2v2-large_11
+        - w2v2-large_20
 
       models:
         - phoneme

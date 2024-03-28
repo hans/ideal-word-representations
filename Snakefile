@@ -380,8 +380,8 @@ rule estimate_synthetic_encoder:
         notebook = "notebooks/synthetic_encoding/feature_selection.ipynb"
 
     output:
-        model_dir = directory("outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}"),
-        notebook = "outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}/feature_selection.ipynb",
+        model_dir = directory("outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}/{subsample_strategy}"),
+        notebook = "outputs/synthetic_encoders/{dataset}/{target_model_name}/{evaluation_name}/{subsample_strategy}/feature_selection.ipynb",
 
     run:
         evaluation = config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]
@@ -389,13 +389,17 @@ rule estimate_synthetic_encoder:
         # Recompute embedding paths with keys here
         embedding_paths = {}
         for model_name in evaluation["models"]:
-            inputs = _get_inputs_for_encoding(model_name, wildcards.dataset)
-            assert len(inputs["embeddings"]) == 1
-            embedding_paths[model_name] = inputs["embeddings"][0]
+            encoding_inputs = _get_inputs_for_encoding(model_name, wildcards.dataset)
+            assert len(encoding_inputs["embeddings"]) == 1
+            embedding_paths[model_name] = encoding_inputs["embeddings"][0]
+
+        # They all share the same state space
+        state_space_path = encoding_inputs["state_spaces"][0]
 
         params = {
             "dataset_path": input.dataset,
             "hidden_states_path": input.hidden_states,
+            "state_space_specs_path": state_space_path,
             "output_dir": output.model_dir,
             "model_embedding_paths": embedding_paths,
 
@@ -412,10 +416,11 @@ rule estimate_synthetic_encoder:
 
 rule estimate_all_synthetic_encoders:
     input:
-        lambda wildcards: [f"outputs/synthetic_encoders/{dataset}/{target_model}/{evaluation_name}/"
+        lambda wildcards: [f"outputs/synthetic_encoders/{dataset}/{target_model}/{evaluation_name}/{subsample_strategy}"
                            for evaluation_name, evaluation in config["synthetic_encoding"]["evaluations"].items()
                            for dataset in evaluation["datasets"]
-                           for target_model in evaluation["target_models"]]
+                           for target_model in evaluation["target_models"]
+                           for subsample_strategy in evaluation["subsample_strategies"]]
 
 
 def make_encoder_data_spec(include_subjects=None):

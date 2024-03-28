@@ -1,0 +1,3 @@
+name: w2v2-large_11
+model_ref: facebook/wav2vec2-large
+layer: 11
