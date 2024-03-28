@@ -36,7 +36,10 @@ def select_gpu_device(wildcards, resources):
     if resources.gpu == 0:
         return None
     import GPUtil
-    available_l = GPUtil.getAvailable(order = 'random', limit = resources.gpu, maxLoad = 0.5, maxMemory = 1.0, includeNan=False, excludeID=[], excludeUUID=[])
+    available_l = GPUtil.getAvailable(
+        order = 'random', limit = resources.gpu,
+        maxLoad = 0.01, maxMemory = 0.01, includeNan=False,
+        excludeID=[], excludeUUID=[])
     available_str = ",".join([str(x) for x in available_l])
 
     if len(available_l) == 0 and resources.gpu > 0:
