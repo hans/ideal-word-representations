@@ -1,0 +1,18 @@
+type: rsa
+
+state_space: syllable
+
+epoch_baseline_window:
+  ecog: [-0.1, 0.0]
+  model: null
+epoch_window:
+  ecog: [0.0, 1.0]
+  model: [0.0, 0.1]
+
+normalization:
+  ecog: zscore
+  model: null
+
+distance_metric:
+  ecog: correlation
+  model: cosine

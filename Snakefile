@@ -527,3 +527,46 @@ rule compare_all_encoders_within_subject:
     input:
         lambda _: [f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}-{comp['model1']}.csv"
                    for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
+
+
+rule estimate_rsa:
+    input:
+        dataset = "outputs/preprocessed_data/{dataset}",
+        computed_inputs = lambda wildcards: _get_inputs_for_encoding(
+            wildcards.feature_sets, wildcards.dataset, return_list=True)
+    output:
+        model_dir = directory("outputs/rsa/{dataset}/{analysis}/{feature_sets}/{subject}"),
+        electrodes = "outputs/rsa/{dataset}/{analysis}/{feature_sets}/{subject}/model_electrode_dists.csv"
+
+    run:
+        encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
+        assert len(encoder_inputs["embeddings"]) == len(encoder_inputs["equivalences"]) \
+            == len(encoder_inputs["hidden_states"])
+
+        data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
+        if len(data_spec) == 0:
+            raise ValueError(f"No data for subject {wildcards.subject}")
+
+        # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
+        overrides = {}
+        if len(encoder_inputs["embeddings"]) > 0:
+            for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
+                    [wildcards.feature_sets], encoder_inputs["embeddings"],
+                    encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
+                    encoder_inputs["state_spaces"]):
+                overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
+                overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
+                overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
+                overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
+        overrides_str = join_hydra_overrides(overrides)
+
+        shell("""
+        python rsa.py \
+            hydra.run.dir={output.model_dir} \
+            feature_sets={wildcards.feature_sets} \
+            +dataset_path={input.dataset} \
+            {overrides_str} \
+            +data='{data_spec}' \
+            +analysis={wildcards.analysis} \
+            analysis.state_space={wildcards.feature_sets}
+        """)
