@@ -37,20 +37,28 @@ def normalize(data: Float[np.ndarray, "num_epochs num_channels num_timepoints"],
         raise ValueError(f"Unknown normalization method: {method}")
 
 
-def do_ecog_rsa(aligned: ecog.AlignedECoGDataset, config: DictConfig):
+def do_ecog_rsa(aligned: ecog.AlignedECoGDataset, config: DictConfig) -> tuple[np.ndarray, pd.DataFrame]:
     # epochs: (n_epochs, n_electrodes, n_timepoints)
     epochs, epoch_info = ecog.epoch_by_state_space(
         aligned, config.analysis.state_space, config.analysis.epoch_window.ecog,
         baseline_window=config.analysis.epoch_baseline_window.ecog
     )
     epochs = cast(np.ndarray, epochs)
-    epochs = normalize(epochs, config.analysis.normalize.ecog)
+    epochs = normalize(epochs, config.analysis.normalization.ecog)
+
+    # Subset if we have too many
+    if config.analysis.max_epochs is not None and epochs.shape[0] > config.analysis.max_epochs:
+        L.warning(f"Too many epochs: {epochs.shape[0]}, subsetting to {config.analysis.max_epochs}")
+
+        sample_idxs = np.random.choice(epochs.shape[0], config.analysis.max_epochs, replace=False)
+        epochs = epochs[sample_idxs]
+        epoch_info = epoch_info.iloc[sample_idxs]
     
     all_distances = [
         pdist(epochs[:, electrode_idx, :], metric=config.analysis.distance_metric.ecog)
         for electrode_idx in trange(epochs.shape[1], desc="Computing ECoG RSA", unit="electrode")
     ]
-    return np.array(all_distances), cast(pd.DataFrame, epoch_info)
+    return np.array(all_distances), pd.DataFrame(epoch_info)
 
 
 def do_model_rsa(epoch_info: pd.DataFrame, aligned: ecog.AlignedECoGDataset, config: DictConfig):
@@ -72,7 +80,7 @@ def do_model_rsa(epoch_info: pd.DataFrame, aligned: ecog.AlignedECoGDataset, con
         model_epochs.append(epoch_data)
 
     model_epoch_data = np.stack(model_epochs)
-    model_epoch_data = normalize(model_epoch_data, config.analysis.normalize.model)
+    model_epoch_data = normalize(model_epoch_data, config.analysis.normalization.model)
 
     model_epoch_data = model_epoch_data.reshape(model_epoch_data.shape[0], -1)
     model_dists = pdist(model_epoch_data, metric=config.analysis.distance_metric.model)
