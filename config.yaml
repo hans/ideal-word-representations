@@ -125,7 +125,7 @@ synthetic_encoding:
 
     basic10:
       num_components: 10
-      num_embeddings_to_select: 4
+      num_embeddings_to_select: 6
 
       datasets:
         - timit
@@ -134,6 +134,7 @@ synthetic_encoding:
         - all
         - multisyllabic
         - monosyllabic
+        - multisyllabic-nonfirst_syllable
 
       target_models:
         - w2v2_0
@@ -162,7 +163,7 @@ synthetic_encoding:
 
     basic50:
       num_components: 50
-      num_embeddings_to_select: 4
+      num_embeddings_to_select: 6
 
       datasets:
         - timit
@@ -171,6 +172,45 @@ synthetic_encoding:
         - all
         - multisyllabic
         - monosyllabic
+        - multisyllabic-nonfirst_syllable
+
+      target_models:
+        - w2v2_0
+        - w2v2_1
+        - w2v2_2
+        - w2v2_3
+        - w2v2_4
+        - w2v2_5
+        - w2v2_6
+        - w2v2_7
+        - w2v2_8
+        - w2v2_9
+        - w2v2_10
+        - w2v2_11
+        - w2v2-large_0
+        - w2v2-large_11
+        - w2v2-large_20
+
+      models:
+        - phoneme
+        - next_phoneme
+        - biphone_recon
+        - biphone_pred
+        - syllable
+        - word_broad
+
+    basic128:
+      num_components: 128
+      num_embeddings_to_select: 6
+
+      datasets:
+        - timit
+
+      subsample_strategies:
+        - all
+        - multisyllabic
+        - monosyllabic
+        - multisyllabic-nonfirst_syllable
 
       target_models:
         - w2v2_0
