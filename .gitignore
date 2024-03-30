@@ -9,6 +9,7 @@ out
 outputs
 .snakemake
 *.log
+*.pkl
 
 # transient notebooks
 202*.ipynb
