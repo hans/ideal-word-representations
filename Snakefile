@@ -455,6 +455,7 @@ rule estimate_noise_ceiling:
 rule estimate_encoder:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
+        encoder_config = "conf_encoder/feature_sets/{feature_sets}.yaml",
         computed_inputs = lambda wildcards: _get_inputs_for_encoding(
             wildcards.feature_sets, wildcards.dataset, return_list=True)
     output:
@@ -535,8 +536,8 @@ rule estimate_rsa:
         computed_inputs = lambda wildcards: _get_inputs_for_encoding(
             wildcards.feature_sets, wildcards.dataset, return_list=True)
     output:
-        model_dir = directory("outputs/rsa/{dataset}/{analysis}/{feature_sets}/{subject}"),
-        electrodes = "outputs/rsa/{dataset}/{analysis}/{feature_sets}/{subject}/model_electrode_dists.csv"
+        model_dir = directory("outputs/rsa/{dataset}/{analysis}/{feature_sets}/{state_space}/{subject}"),
+        electrodes = "outputs/rsa/{dataset}/{analysis}/{feature_sets}/{state_space}/{subject}/model_electrode_dists.csv"
 
     run:
         encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
@@ -568,5 +569,5 @@ rule estimate_rsa:
             {overrides_str} \
             +data='{data_spec}' \
             +analysis={wildcards.analysis} \
-            analysis.state_space={wildcards.feature_sets}
+            analysis.state_space={wildcards.state_space}
         """)

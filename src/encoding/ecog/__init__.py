@@ -255,6 +255,8 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             baseline_start_i = max(0, start_i + baseline_window[0])
             baseline_end_i = min(data_i.shape[1], start_i + baseline_window[1])
             baseline = data_i[:, baseline_start_i:baseline_end_i]
+            if subset_electrodes is not None:
+                baseline = baseline[subset_electrodes]
             epoch -= baseline.mean(axis=1, keepdims=True)
 
         # Pad if necessary
