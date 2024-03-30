@@ -4,7 +4,6 @@ baseline_features:
   - maxDtL
   - formantMedOnset
   - F0
-  - aud
 
 model_features:
   word:

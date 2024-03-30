@@ -4,3 +4,4 @@ baseline_features:
   - maxDtL
   - formantMedOnset
   - F0
+  - aud
