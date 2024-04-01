@@ -13,3 +13,4 @@ model_features:
 
     state_space: phoneme
     featurization: mean
+    permute: null

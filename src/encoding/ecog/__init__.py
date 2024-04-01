@@ -132,12 +132,19 @@ class AlignedECoGDataset:
         data = np.concatenate(self._epochs_data, axis=1)
         return mne.io.RawArray(data, self._mne_info)
 
-    def iter_trajectories(self, state_space_name: str):
+    def iter_trajectories(self, state_space_name: str,
+                          trial_idx: Optional[int] = None):
         if state_space_name not in self._snapshot.all_state_spaces:
             raise ValueError(f"Unknown state space {state_space_name}")
         state_space = self._snapshot.all_state_spaces[state_space_name]
 
-        for name, trial_idx in self.name_to_trial_idx.items():
+        if trial_idx is not None:
+            trial_idxs = [trial_idx]
+        else:
+            trial_idxs = range(len(self.out))
+
+        for trial_idx in trial_idxs:
+            name = self.out[trial_idx]["name"]
             item_frame_start, item_frame_end = self.name_to_frame_bounds[name]
             
             trajectories_i = state_space.get_trajectories_in_span(item_frame_start, item_frame_end)

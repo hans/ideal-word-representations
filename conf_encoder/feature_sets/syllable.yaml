@@ -13,3 +13,4 @@ model_features:
 
     state_space: syllable
     featurization: mean
+    permute: null

@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from src.analysis.state_space import StateSpaceAnalysisSpec
 from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHiddenStateDataset
 from src.encoding.ecog import timit as timit_encoding
-from src.encoding.ecog.timit import OutFileWithAnnotations, OutFile
+from src.encoding.ecog.timit import prepare_xy
 from src.encoding.ecog import get_electrode_df
 
 
@@ -41,7 +41,7 @@ def main(config):
     electrode_df.to_csv(out_dir / "electrodes.csv")
 
     all_xy = [prepare_xy(config, data_spec) for data_spec in config.data]
-    X, Y, feature_names, feature_shapes = timit_encoding.concat_xy(all_xy)
+    X, Y, feature_names, feature_shapes, trial_onsets = timit_encoding.concat_xy(all_xy)
 
     cv_outer = instantiate(config.cv)
     cv_inner = instantiate(config.cv)

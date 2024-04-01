@@ -77,54 +77,50 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
 
     # Scatter model embeddings into a time series aligned with ECoG data.
     n_model_dims = model.embeddings.shape[1]
-    embedding_misses = 0
-    embedding_scatter_hits = 0
-    for i, out_i in enumerate(tqdm(out, desc="Aligning model embeddings")):
-        name = out_i["name"]
+    embedding_scatter_samples, embedding_scatter_data = [], []
 
-        n_ecog_samples = out_i["resp"].shape[1]
-        embedding_data = np.zeros((n_model_dims, n_ecog_samples))
-        out_i["model_embedding"] = embedding_data
+    for traj in aligned_dataset.iter_trajectories(feature_spec.state_space):
+        unit_start = traj["item_start_frame"] + traj["span_model_frames"][0]
+        unit_end = traj["item_start_frame"] + traj["span_model_frames"][1]
 
-        try:
-            item_idx = aligned_dataset.name_to_item_idx[name]
-            frame_start, frame_end = aligned_dataset.name_to_frame_bounds[name]
-        except KeyError:
-            L.warning(f"Skipping {name} as it is not in the embedding set")
-            embedding_misses += 1
-            continue
+        # Prepare embedding of the given unit
+        unit_embedding = None
+        if feature_spec.featurization == "last_frame":
+            unit_embedding = model.embeddings[unit_end]
+        elif feature_spec.featurization == "mean":
+            unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
+        else:
+            raise ValueError(f"Unknown featurization {feature_spec.featurization}")
+        
+        # Scatter an impulse predictor at the sample aligned to the onset of the unit
+        embedding_scatter_samples.append((traj["trial_idx"], traj["span_ecog_samples"][0]))
+        embedding_scatter_data.append(unit_embedding)
 
-        # Now scatter model embeddings according to the spans in the state
-        # space specification
-        unit_spans = model.state_space.get_trajectories_in_span(frame_start, frame_end)
-        for unit_start, unit_end, _, _ in unit_spans:
-            # Compute aligned ECoG sample
-            # magic numbers: 16 KHz audio sampling rate
-            unit_start_secs = (unit_start - frame_start) / aligned_dataset.compression_ratios[name] / 16000
-            unit_start_ecog = int((out_i["befaft"][0] + unit_start_secs) * out_i["dataf"])
+    embedding_scatter_samples = np.array(embedding_scatter_samples)
+    embedding_scatter_data = np.array(embedding_scatter_data)    
+    if feature_spec.permute == "permute_units":
+        # Permute mapping between token units and their embeddings
+        perm = np.random.permutation(embedding_scatter_data.shape[0])
+        embedding_scatter_samples = embedding_scatter_samples[perm]
+    elif feature_spec.permute == "shift":
+        raise NotImplementedError("Shift permutation not implemented")
+    elif feature_spec.permute is None:
+        pass
+    else:
+        raise ValueError(f"Unknown permutation {feature_spec.permute}")
 
-            # Scatter an impulse predictor at the sample aligned to the onset of the unit
-            unit_embedding = None
-            if feature_spec.featurization == "last_frame":
-                unit_embedding = model.embeddings[unit_end]
-            elif feature_spec.featurization == "mean":
-                unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
-            else:
-                raise ValueError(f"Unknown featurization {feature_spec.featurization}")
+    # Now scatter the model embeddings into the annotated data
+    for out_i in out:
+        out_i["model_embedding"] = np.zeros((n_model_dims, out_i["resp"].shape[1]))
+    for (trial_idx, sample), embedding in zip(embedding_scatter_samples, embedding_scatter_data):
+        out[trial_idx]["model_embedding"][:, sample] = embedding
 
-            embedding_data[:, unit_start_ecog] = unit_embedding
-            embedding_scatter_hits += 1
-
-        out_i["model_embedding"] = embedding_data
-
-    if embedding_misses > 0:
-        L.warning(f"Skipped {embedding_misses} sentences ({embedding_misses / len(out) * 100}%) as they were not in the embedding set")
-    L.info(f"Scattered model embeddings for {embedding_scatter_hits} {feature_spec.state_space} units")
+    L.info(f"Scattered model embeddings for {len(embedding_scatter_samples)} {feature_spec.state_space} units")
 
     return out
 
 
-def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]], list[tuple[int, int]]]:
+def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]], np.ndarray]:
     out = prepare_out_file(config, data_spec)
     feature_sets = config.feature_sets.baseline_features[:]
 
@@ -454,11 +450,12 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     return X, Y, feature_names, feature_shapes, trial_onsets
 
 
-def concat_xy(all_xy: list[tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...]]]):
-    X, Y, feature_names, feature_shapes = [], [], None, None
-    for Xi, Yi, feature_names_i, feature_shapes_i in all_xy:
+def concat_xy(all_xy: list[tuple[np.ndarray, np.ndarray, list[str], tuple[int, ...], np.ndarray]]):
+    X, Y, feature_names, feature_shapes, trial_onsets = [], [], None, None, []
+    for Xi, Yi, feature_names_i, feature_shapes_i, trial_onsets_i in all_xy:
         X.append(Xi)
         Y.append(Yi)
+        trial_onsets.append(trial_onsets_i)
 
         if feature_names is None:
             feature_names = feature_names_i
@@ -469,10 +466,11 @@ def concat_xy(all_xy: list[tuple[np.ndarray, np.ndarray, list[str], tuple[int, .
 
     X = np.concatenate(X)
     Y = np.concatenate(Y)
+    trial_onsets = np.concatenate(trial_onsets)
 
     # TODO handle boundaries
 
-    return X, Y, feature_names, feature_shapes
+    return X, Y, feature_names, feature_shapes, trial_onsets
 
 
 def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
