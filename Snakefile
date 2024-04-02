@@ -436,6 +436,41 @@ def make_encoder_data_spec(include_subjects=None):
     return hydra_param(data_spec)
 
 
+def run_encoder(input, output, wildcards, overrides=None):
+    encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
+    assert len(encoder_inputs["embeddings"]) == len(encoder_inputs["equivalences"]) \
+        == len(encoder_inputs["hidden_states"])
+
+    data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
+    if len(data_spec) == 0:
+        raise ValueError(f"No data for subject {wildcards.subject}")
+
+    # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
+    local_overrides = {}
+    if len(encoder_inputs["embeddings"]) > 0:
+        for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
+                [wildcards.feature_sets], encoder_inputs["embeddings"],
+                encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
+                encoder_inputs["state_spaces"]):
+            local_overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
+            local_overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
+            local_overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
+            local_overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
+
+    overrides = overrides if overrides is not None else {}
+    assert not (set(local_overrides.keys()) & overrides.keys()), "Local overrides conflict with global overrides"
+    overrides_str = join_hydra_overrides({**local_overrides, **overrides})
+
+    shell("""
+    python estimate_encoder.py \
+        hydra.run.dir={output.model_dir} \
+        feature_sets={wildcards.feature_sets} \
+        +dataset_path={input.dataset} \
+        {overrides_str} \
+        +data='{data_spec}'
+    """)
+
+
 rule estimate_noise_ceiling:
     output:
         "outputs/encoder_noise_ceiling/splithalf_corrs.csv"
@@ -466,35 +501,40 @@ rule estimate_encoder:
         coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.csv"
 
     run:
-        encoder_inputs = _get_inputs_for_encoding(wildcards.feature_sets, wildcards.dataset)
-        assert len(encoder_inputs["embeddings"]) == len(encoder_inputs["equivalences"]) \
-            == len(encoder_inputs["hidden_states"])
+        run_encoder(input, output, wildcards)
 
-        data_spec = make_encoder_data_spec(include_subjects=[wildcards.subject])
-        if len(data_spec) == 0:
-            raise ValueError(f"No data for subject {wildcards.subject}")
 
-        # Prepare overrides for each feature set's inputs (equivalence dataset and embedding)
-        overrides = {}
-        if len(encoder_inputs["embeddings"]) > 0:
-            for feature_set, embedding_path, equivalence_path, hidden_state_path, state_space_path in zip(
-                    [wildcards.feature_sets], encoder_inputs["embeddings"],
-                    encoder_inputs["equivalences"], encoder_inputs["hidden_states"],
-                    encoder_inputs["state_spaces"]):
-                overrides[f"feature_sets.model_features.{feature_set}.embeddings_path"] = embedding_path
-                overrides[f"feature_sets.model_features.{feature_set}.equivalence_path"] = equivalence_path
-                overrides[f"feature_sets.model_features.{feature_set}.hidden_state_path"] = hidden_state_path
-                overrides[f"feature_sets.model_features.{feature_set}.state_space_path"] = state_space_path
-        overrides_str = join_hydra_overrides(overrides)
+"""
+Estimate a single permutation baseline for a given model embedding.
+"""
+rule estimate_encoder_unit_permutation:
+    input:
+        dataset = "outputs/preprocessed_data/{dataset}",
+        encoder_config = "conf_encoder/feature_sets/{feature_sets}.yaml",
+        computed_inputs = lambda wildcards: _get_inputs_for_encoding(
+            wildcards.feature_sets, wildcards.dataset, return_list=True)
+    output:
+        model_dir = directory("outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}"),
+        electrodes = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/electrodes.csv",
+        scores = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/scores.csv",
+        predictions = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/predictions.npy",
+        coefs = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/coefs.csv"
 
-        shell("""
-        python estimate_encoder.py \
-            hydra.run.dir={output.model_dir} \
-            feature_sets={wildcards.feature_sets} \
-            +dataset_path={input.dataset} \
-            {overrides_str} \
-            +data='{data_spec}'
-        """)
+    run:
+        permutation_type = config["encoding"]["permutation_tests"][wildcards.permutation_name]["permutation"]
+        overrides = {
+            f"feature_sets.model_features.{wildcards.feature_sets}.permute": permutation_type,
+        }
+        run_encoder(input, output, wildcards, overrides=overrides)
+
+
+rule estimate_all_permutations:
+    input:
+        lambda wildcards: [f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{comp['model2']}/{subject}"
+                           for comp in config["encoding"]["model_comparisons"]
+                           for subject in ALL_ENCODING_SUBJECTS
+                           for perm_name, perm in config["encoding"]["permutation_tests"].items()
+                           for perm_idx in range(perm["num_permutations"])]
 
 
 rule compare_encoder_within_subject:
@@ -505,23 +545,42 @@ rule compare_encoder_within_subject:
         model1_coefs = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/coefs.csv",
         model2_coefs = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/coefs.csv",
 
+        model2_permutation_scores = lambda _: [
+            f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{{comparison_model2}}/{{subject}}/scores.csv"
+            for perm_name, perm in config["encoding"]["permutation_tests"].items()
+            for perm_idx in range(perm["num_permutations"])
+        ],
+
     output:
         notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
         csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.csv"
 
-    shell:
-        """
+    run:
+        # group permutation scores by permutation test
+        permutation_scores = {
+            perm_name: [
+                f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
+                for perm_idx in range(perm["num_permutations"])
+            ]
+            for perm_name, perm in config["encoding"]["permutation_tests"].items()
+        }
+
+        params = {
+            "subject": wildcards.subject,
+            "model1": wildcards.comparison_model1,
+            "model2": wildcards.comparison_model2,
+            "model1_scores_path": input.model1_scores,
+            "model2_scores_path": input.model2_scores,
+            "model1_coefs_path": input.model1_coefs,
+            "model2_coefs_path": input.model2_coefs,
+            "model2_permutation_scores": permutation_scores,
+            "output_csv": output.csv
+        }
+        shell(f"""
         papermill --log-output \
             notebooks/encoding/compare_within_subject.ipynb {output.notebook} \
-            -p subject {wildcards.subject} \
-            -p model1 {wildcards.comparison_model1} \
-            -p model2 {wildcards.comparison_model2} \
-            -p model1_scores_path {input.model1_scores} \
-            -p model2_scores_path {input.model2_scores} \
-            -p model1_coefs_path {input.model1_coefs} \
-            -p model2_coefs_path {input.model2_coefs} \
-            -p output_csv {output.csv}
-        """
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 rule compare_all_encoders_within_subject:

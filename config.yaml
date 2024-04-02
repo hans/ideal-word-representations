@@ -118,6 +118,11 @@ encoding:
     - model2: word_broad
       model1: baseline
 
+  permutation_tests:
+    units:
+      permutation: permute_units
+      num_permutations: 5
+
 
 synthetic_encoding:
 
