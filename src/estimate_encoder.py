@@ -61,9 +61,11 @@ def main(config):
     scores_df["output_name"] = scores_df.output_dim.map(dict(enumerate(electrode_df.index)))
     scores_df.to_csv(out_dir / "scores.csv", index=False)
 
-    coef_df = timit_encoding.trf_grid_to_df(best_model, coefs,
-                                            output_names=electrode_df.index)
-    coef_df.to_csv(out_dir / "coefs.csv", index=False)
+    # save best model
+    torch.save(best_model, out_dir / "model.pkl")
+
+    # save coef estimates per fold
+    torch.save(coefs, out_dir / "coefs.pkl")
 
     preds = np.concatenate(preds, axis=0)
     np.save(out_dir / "predictions.npy", preds)
