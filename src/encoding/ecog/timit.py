@@ -494,6 +494,7 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
         "tmin": 0, "tmax": 0.6,
         "fit_intercept": False,
         "verbose": False,
+        "n_jobs": 1,
     }
     trf_kwargs = {**default_trf_kwargs, **(trf_kwargs or {})}
     regression = TemporalReceptiveField(
@@ -510,12 +511,21 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
         hparams = {'estimator': np.logspace(0, 7, 5)}
 
     preds, scores, coefs, best_hparams = [], [], [], []
-    for train, test in tqdm(cv_outer.split(X, Y), total=cv_outer.get_n_splits()):    
+    for i, (train, test) in enumerate(tqdm(cv_outer.split(X, Y), total=cv_outer.get_n_splits())):    
         model = GridSearchCV(regression, hparams,
                              cv=cv_inner,
                              verbose=1,
+                             error_score=np.nan,
                              n_jobs=4)
-        model.fit(X[train], Y[train])
+
+        try:
+            model.fit(X[train], Y[train])
+        except ValueError as e:
+            if "fits failed" in e.args[0]:
+                L.warning(f"Failed to fit model on fold {i}; skipping")
+                continue
+            else:
+                raise
 
         best_estimator: TemporalReceptiveField = model.best_estimator_
         preds.append(best_estimator.predict(X[test]))
