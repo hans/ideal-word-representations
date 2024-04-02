@@ -498,7 +498,8 @@ rule estimate_encoder:
         electrodes = "outputs/encoders/{dataset}/{feature_sets}/{subject}/electrodes.csv",
         scores = "outputs/encoders/{dataset}/{feature_sets}/{subject}/scores.csv",
         predictions = "outputs/encoders/{dataset}/{feature_sets}/{subject}/predictions.npy",
-        coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.csv"
+        model = "outputs/encoders/{dataset}/{feature_sets}/{subject}/model.pkl",
+        coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.pkl"
 
     run:
         run_encoder(input, output, wildcards)
@@ -514,11 +515,12 @@ rule estimate_encoder_unit_permutation:
         computed_inputs = lambda wildcards: _get_inputs_for_encoding(
             wildcards.feature_sets, wildcards.dataset, return_list=True)
     output:
-        model_dir = directory("outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}"),
-        electrodes = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/electrodes.csv",
-        scores = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/scores.csv",
-        predictions = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/predictions.npy",
-        coefs = "outputs/encoders-permute_{permutation_name}-{permutation_idx}/{dataset}/{feature_sets}/{subject}/coefs.csv"
+        model_dir = directory("outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}"),
+        electrodes = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/electrodes.csv",
+        scores = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/scores.csv",
+        predictions = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/predictions.npy",
+        model = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/model.pkl"
+        coefs = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/coefs.pkl"
 
     run:
         permutation_type = config["encoding"]["permutation_tests"][wildcards.permutation_name]["permutation"]
@@ -530,7 +532,7 @@ rule estimate_encoder_unit_permutation:
 
 rule estimate_all_permutations:
     input:
-        lambda wildcards: [f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{comp['model2']}/{subject}"
+        lambda wildcards: [f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{comp['model2']}/{subject}"
                            for comp in config["encoding"]["model_comparisons"]
                            for subject in ALL_ENCODING_SUBJECTS
                            for perm_name, perm in config["encoding"]["permutation_tests"].items()
@@ -546,20 +548,24 @@ rule compare_encoder_within_subject:
         model2_coefs = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/coefs.csv",
 
         model2_permutation_scores = lambda _: [
-            f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{{comparison_model2}}/{{subject}}/scores.csv"
+            f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{{comparison_model2}}/{{subject}}/scores.csv"
             for perm_name, perm in config["encoding"]["permutation_tests"].items()
             for perm_idx in range(perm["num_permutations"])
         ],
 
     output:
-        notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.ipynb",
-        csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}.csv"
+        comparison_dir = directory("outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}"),
+        notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/comparison.ipynb",
+        scores_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/scores.csv",
+        improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/improvements.csv",
+        permutation_improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/permutation_improvements.csv",
+        ttest_results = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/ttest_results.csv",
 
     run:
         # group permutation scores by permutation test
         permutation_scores = {
             perm_name: [
-                f"outputs/encoders-permute_{perm_name}-{perm_idx}/{ENCODING_DATASET}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
+                f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
                 for perm_idx in range(perm["num_permutations"])
             ]
             for perm_name, perm in config["encoding"]["permutation_tests"].items()
