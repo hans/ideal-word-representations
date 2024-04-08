@@ -103,19 +103,36 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         perm = np.random.permutation(embedding_scatter_data.shape[0])
         embedding_scatter_samples = embedding_scatter_samples[perm]
     elif feature_spec.permute == "shift":
-        raise NotImplementedError("Shift permutation not implemented")
+        assert "tmax" in config.model and "tmin" in config.model, \
+            "Shift permutation requires 'tmin' and 'tmax' to be set in the model configuration"
+
+        # Apply a fixed random jitter to the alignment of the model embeddings,
+        # beyond the temporal window of the TRF model
+        window_size = config.model.tmax - config.model.tmin
+        jitter = np.random.uniform(window_size, 3 * window_size)
+        jitter = (-1 if np.random.rand() < 0.5 else 1) * jitter
+        L.info(f"Applying jitter of {jitter} samples to model embeddings")
+        embedding_scatter_samples[:, 1] += jitter
     elif feature_spec.permute is None:
         pass
     else:
         raise ValueError(f"Unknown permutation {feature_spec.permute}")
 
     # Now scatter the model embeddings into the annotated data
+    out_of_bounds_units = 0
     for out_i in out:
         out_i["model_embedding"] = np.zeros((n_model_dims, out_i["resp"].shape[1]))
     for (trial_idx, sample), embedding in zip(embedding_scatter_samples, embedding_scatter_data):
+        # NB this sample may be out-of-bounds if we shift-permuted and jittered too far
+        if sample < 0 or sample >= out[trial_idx]["model_embedding"].shape[1]:
+            L.warning(f"Sample {sample} out of bounds for trial {trial_idx}; skipping")
+            out_of_bounds_units += 1
+            continue
         out[trial_idx]["model_embedding"][:, sample] = embedding
 
     L.info(f"Scattered model embeddings for {len(embedding_scatter_samples)} {feature_spec.state_space} units")
+    if out_of_bounds_units:
+        L.warning(f"Skipped {out_of_bounds_units} units ({out_of_bounds_units / len(embedding_scatter_samples) * 100 : .2f}%) due to out-of-bounds samples")
 
     return out
 
@@ -477,7 +494,7 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
                    trf_kwargs=None,
                    hparams=None,
                    cv_outer=None, cv_inner=None,
-                   ) -> tuple[TemporalReceptiveField,
+                   ) -> tuple[Optional[TemporalReceptiveField],
                               list[np.ndarray],
                               list[np.ndarray],
                               list[np.ndarray],
@@ -510,6 +527,7 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
     if hparams is None:
         hparams = {'estimator': np.logspace(0, 7, 5)}
 
+    best_estimator = None
     preds, scores, coefs, best_hparams = [], [], [], []
     for i, (train, test) in enumerate(tqdm(cv_outer.split(X, Y), total=cv_outer.get_n_splits())):    
         model = GridSearchCV(regression, hparams,

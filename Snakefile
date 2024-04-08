@@ -10,6 +10,11 @@ configfile: "config.yaml"
 ruleorder:
     run_no_train > run
 
+wildcard_constraints:
+    dataset = r"[a-z0-9_]+",
+#     feature_sets = r"[a-z0-9_]+",
+#     subject = r"[a-z0-9_]+",
+
 
 # Notebooks to run for intrinsic analysis on models
 ALL_MODEL_NOTEBOOKS = [
@@ -519,7 +524,7 @@ rule estimate_encoder_unit_permutation:
         electrodes = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/electrodes.csv",
         scores = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/scores.csv",
         predictions = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/predictions.npy",
-        model = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/model.pkl"
+        model = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/model.pkl",
         coefs = "outputs/encoders-permute_{permutation_name}/{permutation_idx}/{dataset}/{feature_sets}/{subject}/coefs.pkl"
 
     run:
@@ -544,28 +549,32 @@ rule compare_encoder_within_subject:
         model1_scores = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/scores.csv",
         model2_scores = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/scores.csv",
 
-        model1_coefs = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/coefs.csv",
-        model2_coefs = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/coefs.csv",
+        model1_model = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/model.pkl",
+        model2_model = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/model.pkl",
 
-        model2_permutation_scores = lambda _: [
-            f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{{comparison_model2}}/{{subject}}/scores.csv"
+        model1_coefs = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/coefs.pkl",
+        model2_coefs = "outputs/encoders/{dataset}/{comparison_model2}/{subject}/coefs.pkl",
+
+        model2_permutation_scores = lambda wildcards: [
+            f"outputs/encoders-permute_{perm_name}/{perm_idx}/{wildcards.dataset}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
             for perm_name, perm in config["encoding"]["permutation_tests"].items()
             for perm_idx in range(perm["num_permutations"])
-        ],
+        ]
 
     output:
-        comparison_dir = directory("outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}"),
-        notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/comparison.ipynb",
-        scores_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/scores.csv",
-        improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/improvements.csv",
-        permutation_improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/permutation_improvements.csv",
-        ttest_results = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}-{comparison_model1}/ttest_results.csv",
+        comparison_dir = directory("outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}"),
+        notebook = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}/comparison.ipynb",
+        scores_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}/scores.csv",
+        improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}/improvements.csv",
+        permutation_improvements_csv = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}/permutation_improvements.csv",
+        ttest_results = "outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}/ttest_results.csv",
 
     run:
         # group permutation scores by permutation test
+        assert wildcards.dataset == ENCODING_DATASET
         permutation_scores = {
             perm_name: [
-                f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
+                f"outputs/encoders-permute_{perm_name}/{perm_idx}/{wildcards.dataset}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
                 for perm_idx in range(perm["num_permutations"])
             ]
             for perm_name, perm in config["encoding"]["permutation_tests"].items()
@@ -579,8 +588,10 @@ rule compare_encoder_within_subject:
             "model2_scores_path": input.model2_scores,
             "model1_coefs_path": input.model1_coefs,
             "model2_coefs_path": input.model2_coefs,
-            "model2_permutation_scores": permutation_scores,
-            "output_csv": output.csv
+            "model1_model_path": input.model1_model,
+            "model2_model_path": input.model2_model,
+            "model2_permutation_score_paths": permutation_scores,
+            "output_dir": output.comparison_dir,
         }
         shell(f"""
         papermill --log-output \
@@ -591,7 +602,7 @@ rule compare_encoder_within_subject:
 
 rule compare_all_encoders_within_subject:
     input:
-        lambda _: [f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}-{comp['model1']}.csv"
+        lambda _: [f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}/{comp['model1']}/"
                    for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
 
 

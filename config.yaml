@@ -122,6 +122,9 @@ encoding:
     units:
       permutation: permute_units
       num_permutations: 5
+    shift:
+      permutation: shift
+      num_permutations: 5
 
 
 synthetic_encoding:

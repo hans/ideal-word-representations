@@ -2,6 +2,7 @@ defaults:
   - _self_
   - feature_sets: baseline
   - corpus: timit_spirit
+  - model: trf
 
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog

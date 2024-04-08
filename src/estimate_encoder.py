@@ -46,18 +46,31 @@ def main(config):
     cv_outer = instantiate(config.cv)
     cv_inner = instantiate(config.cv)
 
-    # HACK
-    sfreq = 100
+    # TODO check match between model sfreq and dataset sfreq
 
     best_model, preds, scores, coefs, best_hparams = timit_encoding.strf_nested_cv(
         X, Y, feature_names, feature_shapes,
-        sfreq=sfreq, cv_outer=cv_outer, cv_inner=cv_inner)
+        trf_kwargs=config.model,
+        sfreq=config.model.sfreq, cv_outer=cv_outer, cv_inner=cv_inner)
     
-    scores_df = pd.DataFrame(
-        np.array(scores),
-        index=pd.Index(list(range(cv_outer.get_n_splits())), name="fold"),
-        columns=pd.Index(list(range(scores[0].shape[0])), name="output_dim"))
-    scores_df = scores_df.reset_index().melt(id_vars="fold", var_name="output_dim", value_name="score")
+    if len(scores) == 0:
+        # No models converged. Save dummy outputs.
+        scores_df = pd.DataFrame(
+            [(fold, output_dim, np.nan)
+             for fold in range(cv_outer.get_n_splits())
+             for output_dim in range(Y.shape[1])],
+            columns=["fold", "output_dim", "score"]
+        )
+        best_model = None
+        coefs = []
+        preds = np.zeros(Y.shape)
+    else:
+        scores_df = pd.DataFrame(
+            np.array(scores),
+            index=pd.Index(list(range(cv_outer.get_n_splits())), name="fold"),
+            columns=pd.Index(list(range(scores[0].shape[0])), name="output_dim"))
+        scores_df = scores_df.reset_index().melt(id_vars="fold", var_name="output_dim", value_name="score")
+
     scores_df["output_name"] = scores_df.output_dim.map(dict(enumerate(electrode_df.index)))
     scores_df.to_csv(out_dir / "scores.csv", index=False)
 

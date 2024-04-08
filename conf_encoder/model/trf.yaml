@@ -1,0 +1,7 @@
+type: trf
+
+tmin: 0.0
+tmax: 0.6
+sfreq: 100
+
+fit_intercept: false
