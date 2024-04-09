@@ -108,8 +108,8 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
 
         # Apply a fixed random jitter to the alignment of the model embeddings,
         # beyond the temporal window of the TRF model
-        window_size = config.model.tmax - config.model.tmin
-        jitter = np.random.uniform(window_size, 3 * window_size)
+        window_size = np.round((config.model.tmax - config.model.tmin) * config.model.sfreq).astype(int)
+        jitter = int(np.random.uniform(window_size, 2 * window_size))
         jitter = (-1 if np.random.rand() < 0.5 else 1) * jitter
         L.info(f"Applying jitter of {jitter} samples to model embeddings")
         embedding_scatter_samples[:, 1] += jitter
@@ -512,10 +512,10 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
         "fit_intercept": False,
         "verbose": False,
         "n_jobs": 1,
+        "sfreq": sfreq,
     }
     trf_kwargs = {**default_trf_kwargs, **(trf_kwargs or {})}
     regression = TemporalReceptiveField(
-        sfreq=sfreq,
         feature_names=feature_names,
         **trf_kwargs)
 

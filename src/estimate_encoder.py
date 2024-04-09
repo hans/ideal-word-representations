@@ -8,7 +8,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
 import mat73
-from omegaconf import DictConfig
+from omegaconf import OmegaConf
 import pandas as pd
 from scipy.io import loadmat
 import torch
@@ -48,10 +48,15 @@ def main(config):
 
     # TODO check match between model sfreq and dataset sfreq
 
+    # Prepare MNE model kwargs from config
+    trf_kwargs = OmegaConf.to_object(config.model)
+    sfreq = trf_kwargs.pop("sfreq")
+    trf_kwargs.pop("type")
+
     best_model, preds, scores, coefs, best_hparams = timit_encoding.strf_nested_cv(
         X, Y, feature_names, feature_shapes,
-        trf_kwargs=config.model,
-        sfreq=config.model.sfreq, cv_outer=cv_outer, cv_inner=cv_inner)
+        trf_kwargs=trf_kwargs,
+        sfreq=sfreq, cv_outer=cv_outer, cv_inner=cv_inner)
     
     if len(scores) == 0:
         # No models converged. Save dummy outputs.
