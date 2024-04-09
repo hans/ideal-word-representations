@@ -67,6 +67,23 @@ class ContrastiveModelSnapshot:
         assert self.embeddings.shape[0] == self.hidden_states.num_frames
 
 
+def process_item_frame_mapping(item,
+                               out_all_names: list[str],
+                               snapshot: ContrastiveModelSnapshot,
+                               self: "AlignedECoGDataset"):
+    # Dataset mapper which computes mapping from item to frame indices, etc.
+    # Used within AlignedECoGDataset but defined as function here to allow
+    # for pickling.
+
+    name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
+    if name in out_all_names:
+        self.name_to_item_idx[name] = item["idx"]
+
+        frame_start, frame_end = snapshot.hidden_states.frames_by_item[item["idx"]]
+        self.name_to_frame_bounds[name] = (frame_start, frame_end)
+        self.compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
+
+
 class AlignedECoGDataset:
     """
     Stores alignment between ECoG trials (one trial per sentence) and a
@@ -84,15 +101,11 @@ class AlignedECoGDataset:
         out_all_names = [out_i["name"] for out_i in out]
         self.name_to_trial_idx = {name: idx for idx, name in enumerate(out_all_names)}
         self.name_to_item_idx, self.name_to_frame_bounds, self.compression_ratios = {}, {}, {}
-        def process_item(item):
-            name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
-            if name in out_all_names:
-                self.name_to_item_idx[name] = item["idx"]
-
-                frame_start, frame_end = snapshot.hidden_states.frames_by_item[item["idx"]]
-                self.name_to_frame_bounds[name] = (frame_start, frame_end)
-                self.compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
-        self.dataset.map(process_item)
+        
+        self.dataset.map(process_item_frame_mapping,
+                         fn_kwargs=dict(out_all_names=out_all_names,
+                                        snapshot=snapshot,
+                                        self=self))
 
         self._check_consistency()
 
