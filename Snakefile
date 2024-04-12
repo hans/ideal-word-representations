@@ -559,7 +559,9 @@ rule compare_encoder_within_subject:
             f"outputs/encoders-permute_{perm_name}/{perm_idx}/{wildcards.dataset}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
             for perm_name, perm in config["encoding"]["permutation_tests"].items()
             for perm_idx in range(perm["num_permutations"])
-        ]
+        ],
+
+        notebook = "notebooks/encoding/compare_within_subject.ipynb",
 
     output:
         comparison_dir = directory("outputs/encoder_comparison/{dataset}/{subject}/{comparison_model2}/{comparison_model1}"),
@@ -595,7 +597,7 @@ rule compare_encoder_within_subject:
         }
         shell(f"""
         papermill --log-output \
-            notebooks/encoding/compare_within_subject.ipynb {output.notebook} \
+            {input.notebook} {output.notebook} \
             -y "{yaml.safe_dump(params)}"
         """)
 
