@@ -600,10 +600,56 @@ rule compare_encoder_within_subject:
         """)
 
 
-rule compare_all_encoders_within_subject:
+rule compare_all_encoders_across_subject:
     input:
-        lambda _: [f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}/{comp['model1']}/"
-                   for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
+        all_comparisons = lambda _: [
+            f"outputs/encoder_comparison/{{dataset}}/{subject}/{comp['model2']}/{comp['model1']}/"
+            for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS],
+        notebook = "notebooks/encoding/compare_across_subject.ipynb",
+
+    output:
+        dir = directory("outputs/encoder_comparison_across_subjects/{dataset}"),
+        notebook = "outputs/encoder_comparison_across_subjects/{dataset}/notebook.ipynb",
+
+        electrodes = "outputs/encoder_comparison_across_subjects/{dataset}/electrodes.csv",
+        scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
+
+        ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest.csv",
+        ttest_filtered = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
+    
+    shell:
+        """
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.dir}
+        """
+
+
+rule colocation_study_within_subject:
+    input:
+        encoder_ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
+        notebook = "notebooks/encoding/colocation_within_subject.ipynb",
+        encoders = lambda wildcards: [f"outputs/encoders/{{dataset}}/{comp['model2']}/{{subject}}/"
+                                      for comp in config["encoding"]["model_comparisons"]]
+
+    output:
+        dir = directory("outputs/encoder_colocation_study/{dataset}/{subject}"),
+        notebook = "outputs/encoder_colocation_study/{dataset}/{subject}/notebook.ipynb",
+
+    shell:
+        # TODO explicitly pass
+        """
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -p subject {wildcards.subject}
+            -p output_dir {output.dir}
+        """
+
+
+rule all_colocation_studies:
+    input:
+        lambda _: [f"outputs/encoder_colocation_study/{ENCODING_DATASET}/{subject}/"
+                   for subject in ALL_ENCODING_SUBJECTS],
 
 
 rule estimate_rsa:
