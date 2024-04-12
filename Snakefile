@@ -643,14 +643,20 @@ rule colocation_study_within_subject:
         dir = directory("outputs/encoder_colocation_study/{dataset}/{subject}"),
         notebook = "outputs/encoder_colocation_study/{dataset}/{subject}/notebook.ipynb",
 
-    shell:
-        # TODO explicitly pass
-        """
+    run:
+        params = {
+            "dataset": wildcards.dataset,
+            "subject": wildcards.subject,
+            "ttest_results_path": input.encoder_ttest,
+            "output_dir": output.dir,
+            "encoder_dirs": list(map(str, input.encoders)),
+        }
+
+        shell(f"""
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p subject {wildcards.subject} \
-            -p output_dir {output.dir}
-        """
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 rule all_colocation_studies:
