@@ -617,12 +617,17 @@ rule compare_all_encoders_across_subject:
         ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest.csv",
         ttest_filtered = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
     
-    shell:
-        """
+    run:
+        params = {
+            "output_dir": output.dir,
+            "encoder_comparisons": list(map(str, input.all_comparisons)),
+        }
+        
+        shell(f"""
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p output_dir {output.dir}
-        """
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 rule colocation_study_within_subject:
@@ -641,7 +646,7 @@ rule colocation_study_within_subject:
         """
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p subject {wildcards.subject}
+            -p subject {wildcards.subject} \
             -p output_dir {output.dir}
         """
 
