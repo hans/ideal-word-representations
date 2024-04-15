@@ -635,9 +635,13 @@ rule compare_all_encoders_across_subject:
 rule colocation_study_within_subject:
     input:
         encoder_ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
+        encoder_scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
         notebook = "notebooks/encoding/colocation_within_subject.ipynb",
-        encoders = lambda wildcards: [f"outputs/encoders/{{dataset}}/{comp['model2']}/{{subject}}/"
-                                      for comp in config["encoding"]["model_comparisons"]]
+        encoders = lambda wildcards: {
+            f"outputs/encoders/{{dataset}}/{comp[comp_key]}/{{subject}}/"
+            for comp in config["encoding"]["model_comparisons"]
+            for comp_key in ["model1", "model2"]
+        },
 
     output:
         dir = directory("outputs/encoder_colocation_study/{dataset}/{subject}"),
@@ -648,6 +652,7 @@ rule colocation_study_within_subject:
             "dataset": wildcards.dataset,
             "subject": wildcards.subject,
             "ttest_results_path": input.encoder_ttest,
+            "scores_path": input.encoder_scores,
             "output_dir": output.dir,
             "encoder_dirs": list(map(str, input.encoders)),
         }
