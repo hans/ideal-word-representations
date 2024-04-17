@@ -10,6 +10,7 @@ from mne.decoding import ReceptiveField
 import numpy as np
 from omegaconf import DictConfig
 import pandas as pd
+import polars as pl
 from scipy.io import loadmat
 import torch
 from tqdm.auto import tqdm
@@ -205,8 +206,10 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                          subset_electrodes: Optional[list[int]] = None,
                          pad_mode: str = "constant",
                          pad_values=0.0,
-                         return_df=False
-                         ) -> Union[tuple[np.ndarray, list[dict]], pd.DataFrame]:
+                         zscore=True,
+                         return_df=False,
+                         return_pl=False,
+                         ) -> Union[tuple[np.ndarray, list[dict]], pd.DataFrame, pl.DataFrame]:
     """
     Args:
         aligned_dataset: AlignedECoGDataset
@@ -239,10 +242,29 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             # All epochs should have same number of channels
             assert data_i.shape[0] == data_0.shape[0]
 
+    assert not (return_df and return_pl), "Can only return one of DataFrame or Polars DataFrame"
+
     epochs, epoch_info = [], []
     state_space = aligned_dataset._snapshot.all_state_spaces[state_space_name]
 
     trajectories = list(aligned_dataset.iter_trajectories(state_space_name))
+
+    zscore_mean, zscore_std = None, None
+    if zscore:
+        if data is not None:
+            zscore_mean = np.concatenate(list(data.values()), axis=1).mean(axis=1)
+            zscore_std = np.concatenate(list(data.values()), axis=1).std(axis=1)
+        else:
+            zscore_mean = np.concatenate(
+                [aligned_dataset.out[span["trial_idx"]]["resp"]
+                 for span in trajectories
+                 if aligned_dataset.out[span["trial_idx"]]["resp"].ndim == 2],
+                axis=1).mean(axis=1)
+            zscore_std = np.concatenate(
+                [aligned_dataset.out[span["trial_idx"]]["resp"]
+                 for span in trajectories
+                 if aligned_dataset.out[span["trial_idx"]]["resp"].ndim == 2],
+                axis=1).std(axis=1)
 
     for span in tqdm(trajectories):
         trial = aligned_dataset.out[span["trial_idx"]]
@@ -281,8 +303,12 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                 baseline = baseline[subset_electrodes]
             epoch -= baseline.mean(axis=1, keepdims=True)
 
+        if zscore_mean is not None and zscore_std is not None:
+            epoch = (epoch - zscore_mean[:, None]) / zscore_std[:, None]
+
         # Pad if necessary
         epoch_length_i = epoch.shape[1]
+
         if epoch_length_i < epoch_length:
             pad_width = ((0, 0), (0, epoch_length - epoch_length_i))
             epoch = np.pad(epoch, pad_width, mode=pad_mode, constant_values=pad_values)
@@ -311,6 +337,23 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         epoch_df = pd.merge(epoch_df, pd.DataFrame(epoch_info), on="epoch_idx",
                             how="left", validate="many_to_one")
         epoch_df["epoch_duration_secs"] = epoch_df.epoch_duration_samples / aligned_dataset.ecog_sfreq
+
+        return epoch_df
+    elif return_pl:
+        if len(epochs) == 0:
+            return pl.DataFrame()
+
+        epoch_df = pl.concat([
+                pl.from_numpy(ei, schema=list(map(str, np.arange(ei.shape[1]))))
+                    .with_columns(electrode_idx=np.arange(epochs[0].shape[0]) if subset_electrodes is None else subset_electrodes,
+                                  epoch_idx=pl.lit(i).cast(pl.Int64))
+                for i, ei in enumerate(epochs)]) \
+            .melt(id_vars=["epoch_idx", "electrode_idx"], variable_name="epoch_sample", value_name="value") \
+            .with_columns(epoch_sample=pl.col("epoch_sample").cast(pl.Int64)) \
+            .join(pl.DataFrame(epoch_info).with_columns(epoch_idx=pl.col("epoch_idx").cast(pl.Int64)),
+                  on="epoch_idx", how="left") \
+            .with_columns(epoch_duration_secs=pl.col("epoch_duration_samples") / aligned_dataset.ecog_sfreq,
+                          epoch_time=(pl.col("epoch_sample") + epoch_window[0]) / aligned_dataset.ecog_sfreq)
 
         return epoch_df
 
