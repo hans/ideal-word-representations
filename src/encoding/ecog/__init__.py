@@ -158,9 +158,11 @@ class AlignedECoGDataset:
 
         for trial_idx in trial_idxs:
             name = self.out[trial_idx]["name"]
+
+            # NB this is a half-open range -- so will need to adjust for state-space methods
             item_frame_start, item_frame_end = self.name_to_frame_bounds[name]
             
-            trajectories_i = state_space.get_trajectories_in_span(item_frame_start, item_frame_end)
+            trajectories_i = state_space.get_trajectories_in_span(item_frame_start, item_frame_end - 1)
 
             trial_i = self.out[trial_idx]
             trial_start_padding = trial_i["befaft"][0]  # padding at start of trial, in seconds
