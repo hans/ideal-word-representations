@@ -8,11 +8,6 @@ models:
     dataset: timit
     model: rnn_3-weightdecay0.01
     equivalence: phoneme_10frames
-
-  # - base_model: w2v2_6
-  #   dataset: timit
-  #   model: rnn_8-weightdecay0.01
-  #   equivalence: phoneme_10frames
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
@@ -21,14 +16,6 @@ models:
     dataset: timit
     model: rnn_3-weightdecay0.01
     equivalence: next_phoneme_10frames
-  # - base_model: w2v2_6
-  #   dataset: timit
-  #   model: rnn_8-weightdecay0.01
-  #   equivalence: phoneme_within_word_prefix
-  # - base_model: w2v2_6
-  #   dataset: timit
-  #   model: rnn_8-weightdecay0.01
-  #   equivalence: phoneme_within_word_suffix
   - base_model: w2v2_6
     dataset: timit
     model: rnn_8-weightdecay0.01
@@ -46,12 +33,34 @@ models:
     model: rnn_8-weightdecay0.01
     equivalence: biphone_pred_10frames
 
-  # - base_model: w2v2_6
-  #   model: rnn_32
-  #   equivalence: phoneme_within_word_prefix
-  # - base_model: w2v2_6
-  #   model: rnn_32
-  #   equivalence: phoneme_within_word_suffix
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_3-weightdecay0.01
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-weightdecay0.01
+    equivalence: syllable_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_3-weightdecay0.01
+    equivalence: next_phoneme_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-weightdecay0.01
+    equivalence: word_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-weightdecay0.01
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-weightdecay0.01
+    equivalence: biphone_recon_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-weightdecay0.01
+    equivalence: biphone_pred_10frames
 
   # random LSTM models
   - base_model: w2v2_6
@@ -62,6 +71,14 @@ models:
     dataset: timit
     model: randomrnn_32
     equivalence: random
+  - base_model: w2v2_8
+    dataset: timit
+    model: randomrnn_8
+    equivalence: random
+  - base_model: w2v2_8
+    dataset: timit
+    model: randomrnn_32
+    equivalence: random
 
   # random feedforward models
   - base_model: w2v2_6
@@ -69,6 +86,14 @@ models:
     model: randomff_8
     equivalence: random
   - base_model: w2v2_6
+    dataset: timit
+    model: randomff_32
+    equivalence: random
+  - base_model: w2v2_8
+    dataset: timit
+    model: randomff_8
+    equivalence: random
+  - base_model: w2v2_8
     dataset: timit
     model: randomff_32
     equivalence: random
