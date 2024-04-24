@@ -265,6 +265,10 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                  for span in trajectories
                  if aligned_dataset.out[span["trial_idx"]]["resp"].ndim == 2],
                 axis=1).std(axis=1)
+            
+        if subset_electrodes is not None:
+            zscore_mean = zscore_mean[subset_electrodes]
+            zscore_std = zscore_std[subset_electrodes]
 
     for span in tqdm(trajectories):
         trial = aligned_dataset.out[span["trial_idx"]]
