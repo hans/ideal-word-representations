@@ -1,3 +1,4 @@
+from dataclasses import replace
 import logging 
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
+from ray import tune
 from sklearn.metrics import roc_curve, roc_auc_score
 import torch
 import transformers
@@ -16,9 +18,15 @@ from src.models import integrator
 L = logging.getLogger(__name__)
 
 
-def make_model_init(config, device="cpu"):
+def make_model_init(config: integrator.ContrastiveEmbeddingModelConfig, device="cpu"):
     def model_init(trial):
-        return integrator.ContrastiveEmbeddingModel(config).to(device)  # type: ignore
+        if trial is not None:
+            config_trial = replace(config,
+                hidden_dim=trial["hidden_dim"],
+                tau=trial["tau"])
+        else:
+            config_trial = config
+        return integrator.ContrastiveEmbeddingModel(config_trial).to(device)  # type: ignore
     return model_init
 
 
@@ -37,6 +45,22 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     return num_examples, train_dataset, eval_dataset, target_length
 
 
+def hyperparameter_space(trial):
+    return {
+        "learning_rate": tune.loguniform(1e-5, 1e-1),
+        "weight_decay": tune.loguniform(1e-5, 1e-1),
+        "tau": tune.loguniform(1e-3, 1e3),
+        "hidden_dim": tune.choice([32, 64, 128, 256, 512]),
+    }
+
+
+HYPERPARAMETER_OBJECTIVE_DIRECTION = "maximize"
+def hyperparameter_objective(metrics: dict[str, float]) -> float:
+    from pprint import pprint
+    pprint(metrics)
+    return metrics["eval_embedding_isoscore"]
+
+
 def train(config: DictConfig):
     if config.device == "cuda":
         if not torch.cuda.is_available():
@@ -52,16 +76,19 @@ def train(config: DictConfig):
         equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
 
     # Prepare negative-sampling dataset
-    if config.trainer.do_train:
+    if config.trainer.mode in ["train", "hyperparameter_search"]:
         total_num_examples, train_dataset, eval_dataset, max_length = prepare_neg_dataset(
             equiv_dataset, hidden_state_dataset)
         
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = eval_dataset.with_format("torch")
-    else:
+    elif config.trainer.mode == "no_train":
         total_num_examples = 0
         train_dataset, eval_dataset = None, None
         max_length = equiv_dataset.lengths.max().item()
+    else:
+        raise ValueError(f"Invalid trainer mode: {config.trainer.mode}")
+
     max_training_steps = config.training_args.num_train_epochs * total_num_examples
 
     model_config = integrator.ContrastiveEmbeddingModelConfig(
@@ -88,7 +115,8 @@ def train(config: DictConfig):
         callbacks = [instantiate(c) for c in config.trainer.callbacks]
     trainer_config = dict(config.trainer)
     trainer_config.pop("callbacks", None)
-    do_train = trainer_config.pop("do_train", True)
+    trainer_mode = trainer_config.pop("mode", "train")
+    hparam_config = trainer_config.pop("hyperparameter_search", None)
     trainer = transformers.Trainer(
         args=training_args,
         model=None, model_init=model_init,
@@ -97,9 +125,19 @@ def train(config: DictConfig):
         compute_metrics=integrator.compute_metrics,
         **trainer_config)
 
-    if do_train:
+    if trainer_mode == "train":
         trainer.train()
-    else:
+    elif trainer_mode == "hyperparameter_search":
+        trainer.hyperparameter_search(
+            direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
+            backend="ray",
+            n_trials=hparam_config.n_trials,
+            hp_space=hyperparameter_space,
+            compute_objective=hyperparameter_objective,
+            scheduler=instantiate(hparam_config.scheduler,
+                                  mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
+        )
+    elif trainer_mode == "no_train":
         checkpoint_dir = Path(training_args.output_dir) / "checkpoint-0"
         checkpoint_dir.mkdir(exist_ok=True, parents=True)
         trainer.save_model(checkpoint_dir)

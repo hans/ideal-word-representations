@@ -45,7 +45,14 @@ training_args:
     - example_idx
 
 trainer:
-  do_train: true
+  mode: train
   callbacks:
     - _target_: transformers.EarlyStoppingCallback
       early_stopping_patience: 3
+
+  hyperparameter_search:
+    n_trials: 200
+    scheduler:
+      _target_: ray.tune.schedulers.ASHAScheduler
+    compute_objective:
+      _target_: src.train_decoder.compute_objective

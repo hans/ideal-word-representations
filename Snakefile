@@ -209,6 +209,39 @@ rule run:
         """)
 
 
+rule tune_hparam:
+    input:
+        base_model_config = "conf/base_model/{base_model_name}.yaml",
+        equivalence_config = "conf/equivalence/{equivalence_classer}.yaml",
+        model_config = "conf/model/{model_name}.yaml",
+
+        dataset = "outputs/preprocessed_data/{dataset}",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
+
+    resources:
+        gpu = 1
+
+    output:
+        full_trace = directory("outputs/hparam_search/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}")
+
+    run:
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        python train_decoder.py \
+            hydra.run.dir={output.full_trace} \
+            trainer.mode=hyperparameter_search \
+            dataset.processed_data_dir={input.dataset} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
+            model={wildcards.model_name} \
+            equivalence={wildcards.equivalence_classer} \
+            +equivalence.path={input.equivalence_dataset}
+        """)
+
+
 # Run train without actually training -- used to generate random model weights
 NO_TRAIN_DEFAULT_EQUIVALENCE = DEFAULT_PHONEME_EQUIVALENCE
 rule run_no_train:
@@ -234,7 +267,7 @@ rule run_no_train:
             +base_model.hidden_state_path={input.hidden_states} \
             equivalence={NO_TRAIN_DEFAULT_EQUIVALENCE} \
             +equivalence.path={input.equivalence_dataset} \
-            trainer.do_train=false
+            trainer.mode=no_train
         """
 
 
