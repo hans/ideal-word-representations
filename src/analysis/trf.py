@@ -1,13 +1,14 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 from mne.decoding import ReceptiveField
 import numpy as np
 import pandas as pd
+import polars as pl
 from sklearn.model_selection import KFold
 
 
-def trf_to_df(trf: ReceptiveField, output_names) -> pd.DataFrame:
+def trf_to_df(trf: ReceptiveField, output_names, return_pl=False) -> Union[pd.DataFrame, pl.DataFrame]:
     trf_df = []
     for input_dim, name in enumerate(trf.feature_names):
         for output_dim, output_name in enumerate(output_names):
@@ -22,6 +23,33 @@ def trf_to_df(trf: ReceptiveField, output_names) -> pd.DataFrame:
                     "time": delay / trf.sfreq,
                     "coef": coef,
                 })
+
+    return pd.DataFrame(trf_df) if not return_pl else pl.DataFrame(trf_df)
+
+
+def coefs_to_df(coefs, feature_names, output_names, sfreq) -> pd.DataFrame:
+    """
+    Convert the saved coefs array from `estimate_encoder` to a TRF coefficient dataframe.
+    """
+    trf_df = []
+
+    num_folds = len(coefs)
+    num_electrodes, num_features, num_lags = coefs[0].shape
+    assert num_electrodes == len(output_names)
+    assert num_features == len(feature_names)
+
+    for fold, fold_coefs in enumerate(coefs):
+        for electrode_idx, feature_idx, lag_idx in np.ndindex(fold_coefs.shape):
+            trf_df.append({
+                "fold": fold,
+                "feature": feature_names[feature_idx],
+                "output_name": output_names[electrode_idx],
+                "input_dim": feature_idx,
+                "output_dim": electrode_idx,
+                "lag": lag_idx,
+                "time": lag_idx / sfreq,
+                "coef": fold_coefs[electrode_idx, feature_idx, lag_idx],
+            })
 
     return pd.DataFrame(trf_df)
 
