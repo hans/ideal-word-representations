@@ -143,6 +143,21 @@ encoding:
     - model2: word_broad
       model1: baseline
 
+    - model2: phoneme-w2v2_8
+      model1: baseline
+    - model2: next_phoneme-w2v2_8
+      model1: baseline
+    - model2: biphone_recon-w2v2_8
+      model1: baseline
+    - model2: biphone_pred-w2v2_8
+      model1: baseline
+    - model2: syllable-w2v2_8
+      model1: baseline
+    - model2: random8-w2v2_8
+      model1: baseline
+    - model2: word_broad-w2v2_8
+      model1: baseline
+
   permutation_tests:
     units:
       permutation: permute_units

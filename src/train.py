@@ -49,8 +49,8 @@ def hyperparameter_space(trial):
     return {
         "learning_rate": tune.loguniform(1e-5, 1e-1),
         "weight_decay": tune.loguniform(1e-5, 1e-1),
-        "tau": tune.loguniform(1e-3, 1e3),
-        "hidden_dim": tune.choice([32, 64, 128, 256, 512]),
+        "tau": tune.loguniform(1e-3, 1),
+        "hidden_dim": tune.choice([32, 64, 128, 256]),
     }
 
 

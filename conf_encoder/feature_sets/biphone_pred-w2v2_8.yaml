@@ -1,0 +1,16 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  biphone_pred-w2v2_8:
+    base_model: w2v2_8
+    model: rnn_8-weightdecay0.01
+    equivalence: biphone_pred_10frames
+
+    state_space: phoneme
+    featurization: mean
+    permute: null

@@ -1,0 +1,16 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  phoneme-w2v2_8:
+    base_model: w2v2_8
+    model: rnn_3-weightdecay0.01
+    equivalence: phoneme_10frames
+
+    state_space: phoneme
+    featurization: mean
+    permute: null
