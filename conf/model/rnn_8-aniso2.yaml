@@ -1,0 +1,10 @@
+# 2nd top-scoring RNN8 model (in terms of isoscore) from the 20240425 anisotropy sweep
+# _objective_ca010_00043_43_hidden_dim=256,learning_rate=0.0001,tau=0.1262,weight_decay=0.0001_2024-04-24_11-09-28
+
+hidden_dim: 256
+output_dim: 8
+
+in_batch_soft_negatives: true
+learning_rate: 5.686282517103584e-05
+tau: 0.12620410750629132
+weight_decay: 0.00013046241405332315
