@@ -27,6 +27,7 @@ ALL_MODEL_NOTEBOOKS = [
     "temporal_generalization_phoneme",
     "predictions",
     "predictions_word",
+    "state_space",
     "trf",
 ]
 
