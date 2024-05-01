@@ -1,0 +1,16 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  word_broad:
+    base_model: w2v2_6
+    model: rnn_8-aniso2
+    equivalence: word_broad_10frames
+
+    state_space: word
+    featurization: mean
+    permute: null
