@@ -6,7 +6,7 @@ baseline_features:
   - F0
 
 model_features:
-  word_broad:
+  word_broad-aniso3:
     base_model: w2v2_6
     model: rnn_8-aniso3
     equivalence: word_broad_10frames
