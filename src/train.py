@@ -103,6 +103,11 @@ def train(config: DictConfig):
     # ^ can fix this with _recursive_ = False I think
     # We also have to use `to_object` to make sure the params are JSON-serializable
     
+    model_learning_rate = config.model.get("learning_rate")
+    if model_learning_rate is not None:
+        L.warning("Overriding Trainer learning rate with config value from model config: %g", model_learning_rate)
+        config.training_args.learning_rate = model_learning_rate
+
     training_args = transformers.TrainingArguments(
         output_dir=HydraConfig.get().runtime.output_dir,
         logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
