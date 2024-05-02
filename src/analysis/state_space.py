@@ -4,7 +4,7 @@ State space analysis tools for integrator models.
 
 from functools import cached_property
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -206,3 +206,39 @@ def prepare_state_trajectory(
         ret.append(trajectory_frames)
 
     return ret
+
+
+def make_agg_fn_mean_last_k(k):
+    def agg_fn(xs):
+        nan_onset = np.isnan(xs[:, :, 0]).argmax(axis=1)
+        # if there are no nans, set nan_onset to len
+        nan_onset[~np.isnan(xs[:, :, 0]).any(axis=1)] = xs.shape[1]
+        return np.stack([
+            np.mean(xs[i, np.maximum(0, nan_onset[i] - k) : nan_onset[i]], axis=0)
+            for i in range(xs.shape[0])
+        ])
+    return agg_fn
+
+TRAJECTORY_AGG_FNS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "mean": lambda xs: np.nanmean(xs, axis=1),
+    "max": lambda xs: np.nanmax(xs, axis=1),
+    "last_frame": lambda xs: xs[np.arange(xs.shape[0]), np.isnan(xs[:, :, 0]).argmax(axis=1) - 1],
+}
+
+TRAJECTORY_META_AGG_FNS: dict[str, Callable[[Any], Callable[[np.ndarray], np.ndarray]]] = {
+    "mean_last_k": make_agg_fn_mean_last_k,
+}
+
+
+def aggregate_state_trajectory(trajectory: list[np.ndarray],
+                               agg_fn_spec: Union[str, tuple[str, Any]]) -> list[np.ndarray]:
+    """
+    Aggregate over time in the state trajectories returned by `prepare_state_trajectory`.
+    """
+    if isinstance(agg_fn_spec, tuple):
+        agg_fn_name, agg_fn_args = agg_fn_spec
+        agg_fn = TRAJECTORY_META_AGG_FNS[agg_fn_name](agg_fn_args)
+    else:
+        agg_fn = TRAJECTORY_AGG_FNS[agg_fn_spec]
+
+    return [agg_fn(traj) for traj in trajectory]
