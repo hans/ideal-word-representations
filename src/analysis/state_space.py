@@ -214,15 +214,15 @@ def make_agg_fn_mean_last_k(k):
         # if there are no nans, set nan_onset to len
         nan_onset[~np.isnan(xs[:, :, 0]).any(axis=1)] = xs.shape[1]
         return np.stack([
-            np.mean(xs[i, np.maximum(0, nan_onset[i] - k) : nan_onset[i]], axis=0)
+            np.mean(xs[i, np.maximum(0, nan_onset[i] - k) : nan_onset[i]], axis=0, keepdims=True)
             for i in range(xs.shape[0])
         ])
     return agg_fn
 
 TRAJECTORY_AGG_FNS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "mean": lambda xs: np.nanmean(xs, axis=1),
-    "max": lambda xs: np.nanmax(xs, axis=1),
-    "last_frame": lambda xs: xs[np.arange(xs.shape[0]), np.isnan(xs[:, :, 0]).argmax(axis=1) - 1],
+    "mean": lambda xs: np.nanmean(xs, axis=1, keepdims=True),
+    "max": lambda xs: np.nanmax(xs, axis=1, keepdims=True),
+    "last_frame": lambda xs: xs[np.arange(xs.shape[0]), np.isnan(xs[:, :, 0]).argmax(axis=1) - 1][:, None, :],
 }
 
 TRAJECTORY_META_AGG_FNS: dict[str, Callable[[Any], Callable[[np.ndarray], np.ndarray]]] = {
@@ -231,7 +231,8 @@ TRAJECTORY_META_AGG_FNS: dict[str, Callable[[Any], Callable[[np.ndarray], np.nda
 
 
 def aggregate_state_trajectory(trajectory: list[np.ndarray],
-                               agg_fn_spec: Union[str, tuple[str, Any]]) -> list[np.ndarray]:
+                               agg_fn_spec: Union[str, tuple[str, Any]],
+                               keepdims=False) -> list[np.ndarray]:
     """
     Aggregate over time in the state trajectories returned by `prepare_state_trajectory`.
     """
@@ -241,4 +242,8 @@ def aggregate_state_trajectory(trajectory: list[np.ndarray],
     else:
         agg_fn = TRAJECTORY_AGG_FNS[agg_fn_spec]
 
-    return [agg_fn(traj) for traj in trajectory]
+    ret = [agg_fn(traj) for traj in trajectory]
+    if not keepdims:
+        ret = [traj.squeeze(1) for traj in ret]
+
+    return ret

@@ -19,6 +19,7 @@ wildcard_constraints:
 # Notebooks to run for intrinsic analysis on models
 ALL_MODEL_NOTEBOOKS = [
     "lexical_coherence",
+    "lexical_coherence_for_aggregation",
     "syllable_coherence",
     "syllable_coherence_by_position",
     "phoneme_coherence",

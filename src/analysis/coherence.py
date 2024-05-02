@@ -39,8 +39,11 @@ def estimate_within_distance(trajectory, lengths,
             within_distance[i, j] = get_mean_distance(samples_i[mask, j, :], samples_i[mask, j, :], metric=metric)
     
             lengths_i_masked = sample_lengths_i[mask]
-            within_distance_offset[i, j] = get_mean_distance(samples_i[mask, lengths_i_masked - j, :],
-                                                             samples_i[mask, lengths_i_masked - j, :],
+            idx_for_offset = lengths_i_masked - j - 1
+            if (idx_for_offset < 0).any():  # DEV: This should never happen
+                raise ValueError()
+            within_distance_offset[i, j] = get_mean_distance(samples_i[mask, idx_for_offset, :],
+                                                             samples_i[mask, idx_for_offset, :],
                                                              metric=metric)
 
     return within_distance, within_distance_offset
@@ -88,9 +91,13 @@ def estimate_between_distance(trajectory, lengths,
     
                 lengths_i_masked = lengths_i[mask_i]
                 lengths_j_masked = lengths_j[mask_j]
+                idx_for_offset_i = lengths_i_masked - k - 1
+                idx_for_offset_j = lengths_j_masked - k - 1
+                if (idx_for_offset_i < 0).any() or (idx_for_offset_j < 0).any():  # DEV: This should never happen
+                    raise ValueError()
                 between_distances_offset[i, k, j] = get_mean_distance(
-                    traj_i[mask_i][np.arange(mask_i.sum()), lengths_i_masked - k, :],
-                    traj_j[mask_j][np.arange(mask_j.sum()), lengths_j_masked - k, :],
+                    traj_i[mask_i][np.arange(mask_i.sum()), idx_for_offset_i, :],
+                    traj_j[mask_j][np.arange(mask_j.sum()), idx_for_offset_j, :],
                     metric=metric
                 ).mean()
 
