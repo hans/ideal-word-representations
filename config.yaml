@@ -186,6 +186,11 @@ encoding:
     - model2: word_broad-aniso3-w2v2_8
       model1: baseline
 
+    - model2: word_broad-aniso2-w2v2_8-meanlast5
+      model1: baseline
+    - model2: word_broad-aniso3-w2v2_8-meanlast5
+      model1: baseline
+
   permutation_tests:
     units:
       permutation: permute_units

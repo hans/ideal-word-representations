@@ -89,6 +89,14 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
             unit_embedding = model.embeddings[unit_end]
         elif feature_spec.featurization == "mean":
             unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
+        elif isinstance(feature_spec.featurization, (tuple, list)):
+            if feature_spec.featurization[0] == "mean_last_k":
+                k = int(feature_spec.featurization[1])
+                mean_start = max(unit_end - k, unit_start)
+                mean_end = unit_end
+                unit_embedding = model.embeddings[mean_start:mean_end].mean(axis=0)
+            else:
+                raise ValueError(f"Unknown featurization {feature_spec.featurization}")
         else:
             raise ValueError(f"Unknown featurization {feature_spec.featurization}")
         
