@@ -32,7 +32,7 @@ def estimate_within_distance(trajectory, lengths,
         idxs = np.random.choice(num_instances, size=num_instances_limited, replace=False)
         samples_i, sample_lengths_i = trajectory_i[idxs], lengths_i[idxs]
         for j in range(num_frames):
-            mask = sample_lengths_i >= j
+            mask = sample_lengths_i > j
             if mask.sum() <= 1:
                 break
     
@@ -40,8 +40,6 @@ def estimate_within_distance(trajectory, lengths,
     
             lengths_i_masked = sample_lengths_i[mask]
             idx_for_offset = lengths_i_masked - j - 1
-            if (idx_for_offset < 0).any():  # DEV: This should never happen
-                raise ValueError()
             within_distance_offset[i, j] = get_mean_distance(samples_i[mask, idx_for_offset, :],
                                                              samples_i[mask, idx_for_offset, :],
                                                              metric=metric)
@@ -82,8 +80,8 @@ def estimate_between_distance(trajectory, lengths,
                 traj_j, lengths_j = traj_j[idxs], lengths_j[idxs]
             
             for k in range(trajectory[0].shape[1]):
-                mask_i = lengths_i >= k
-                mask_j = lengths_j >= k
+                mask_i = lengths_i > k
+                mask_j = lengths_j > k
                 if mask_i.sum() == 0 or mask_j.sum() == 0:
                     break
                 
@@ -93,8 +91,6 @@ def estimate_between_distance(trajectory, lengths,
                 lengths_j_masked = lengths_j[mask_j]
                 idx_for_offset_i = lengths_i_masked - k - 1
                 idx_for_offset_j = lengths_j_masked - k - 1
-                if (idx_for_offset_i < 0).any() or (idx_for_offset_j < 0).any():  # DEV: This should never happen
-                    raise ValueError()
                 between_distances_offset[i, k, j] = get_mean_distance(
                     traj_i[mask_i][np.arange(mask_i.sum()), idx_for_offset_i, :],
                     traj_j[mask_j][np.arange(mask_j.sum()), idx_for_offset_j, :],
