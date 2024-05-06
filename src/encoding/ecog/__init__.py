@@ -68,21 +68,36 @@ class ContrastiveModelSnapshot:
         assert self.embeddings.shape[0] == self.hidden_states.num_frames
 
 
+class _AlignmentResult:
+    def __init__(self):
+        self.name_to_frame_bounds = {}
+        self.compression_ratios = {}
+        self.name_to_item_idx = {}
+
+
 def process_item_frame_mapping(item,
                                out_all_names: list[str],
-                               snapshot: ContrastiveModelSnapshot,
-                               self: "AlignedECoGDataset"):
+                               frames_by_item: dict[int, tuple[int, int]],
+                               out: _AlignmentResult):
+    """
+    Args:
+        item: dict
+        out_all_names: list[str]
+        frames_by_item: dict[int, tuple[int, int]]
+            as in `SpeechHiddenStateDataset.frames_by_item`
+        self: AlignedECoGDataset
+    """
     # Dataset mapper which computes mapping from item to frame indices, etc.
     # Used within AlignedECoGDataset but defined as function here to allow
     # for pickling.
 
     name = Path(item["file"]).parent.stem.lower() + "_" + item["id"].lower()
     if name in out_all_names:
-        self.name_to_item_idx[name] = item["idx"]
+        out.name_to_item_idx[name] = item["idx"]
 
-        frame_start, frame_end = snapshot.hidden_states.frames_by_item[item["idx"]]
-        self.name_to_frame_bounds[name] = (frame_start, frame_end)
-        self.compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
+        frame_start, frame_end = frames_by_item[item["idx"]]
+        out.name_to_frame_bounds[name] = (frame_start, frame_end)
+        out.compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
 
 
 class AlignedECoGDataset:
@@ -103,10 +118,14 @@ class AlignedECoGDataset:
         self.name_to_trial_idx = {name: idx for idx, name in enumerate(out_all_names)}
         self.name_to_item_idx, self.name_to_frame_bounds, self.compression_ratios = {}, {}, {}
         
+        alignment_result = _AlignmentResult()
         self.dataset.map(process_item_frame_mapping,
                          fn_kwargs=dict(out_all_names=out_all_names,
-                                        snapshot=snapshot,
-                                        self=self))
+                                        frames_by_item=snapshot.hidden_states.frames_by_item,
+                                        out=alignment_result))
+        self.name_to_item_idx = alignment_result.name_to_item_idx
+        self.name_to_frame_bounds = alignment_result.name_to_frame_bounds
+        self.compression_ratios = alignment_result.compression_ratios
 
         self._check_consistency()
 
