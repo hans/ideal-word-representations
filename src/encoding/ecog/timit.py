@@ -4,7 +4,7 @@ from typing import cast, Optional, Union
 
 import mat73
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 import pandas as pd
 from scipy.io import loadmat
 from sklearn.linear_model import Ridge
