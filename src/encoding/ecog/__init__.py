@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import TypeAlias, Union, cast, Optional
+import logging
+from typing import Literal, TypeAlias, Union, cast, Optional
 
 from pathlib import Path
 
@@ -22,6 +23,9 @@ from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHidd
 # processed struct from matlab pipeline
 OutFile: TypeAlias = list[dict[str, np.ndarray]]
 OutFileWithAnnotations: TypeAlias = list[dict[str, np.ndarray]]
+
+
+L = logging.getLogger(__name__)
 
 
 @dataclass
@@ -218,6 +222,7 @@ class AlignedECoGDataset:
 
 def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                          state_space_name: str,
+                         align_to: Union[Literal["onset"], Literal["offset"]] = "onset",
                          epoch_window: tuple[float, float] = (-0.1, 0.5),
                          baseline_window: Optional[tuple[float, float]] = None,
                          data: Optional[dict[str, np.ndarray]] = None,
@@ -226,6 +231,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                          pad_mode: str = "constant",
                          pad_values=0.0,
                          zscore=True,
+                         drop_outliers=20.,
                          return_df=False,
                          return_pl=False,
                          ) -> Union[tuple[np.ndarray, list[dict]], pd.DataFrame, pl.DataFrame]:
@@ -274,17 +280,16 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             zscore_mean = np.concatenate(list(data.values()), axis=1).mean(axis=1)
             zscore_std = np.concatenate(list(data.values()), axis=1).std(axis=1)
         else:
-            zscore_mean = np.concatenate(
-                [aligned_dataset.out[span["trial_idx"]]["resp"]
-                 for span in trajectories
-                 if aligned_dataset.out[span["trial_idx"]]["resp"].ndim == 2],
-                axis=1).mean(axis=1)
-            zscore_std = np.concatenate(
-                [aligned_dataset.out[span["trial_idx"]]["resp"]
-                 for span in trajectories
-                 if aligned_dataset.out[span["trial_idx"]]["resp"].ndim == 2],
-                axis=1).std(axis=1)
-            
+            seen_trials = set(span["trial_idx"] for span in trajectories)
+
+            all_trial_data = np.concatenate([
+                aligned_dataset.out[trial_idx]["resp"]
+                for trial_idx in seen_trials
+                if aligned_dataset.out[trial_idx]["resp"].ndim == 2
+            ], axis=1)
+            zscore_mean = all_trial_data.mean(axis=1)
+            zscore_std = all_trial_data.std(axis=1)
+
         if subset_electrodes is not None:
             zscore_mean = zscore_mean[subset_electrodes]
             zscore_std = zscore_std[subset_electrodes]
@@ -311,16 +316,18 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             start_i, end_i = span["span_ecog_samples"]
         else:
             start_i, end_i = span["span_ecog_samples_nopad"]
-        epoch_start_i = max(0, start_i + epoch_window[0])
-        epoch_end_i = min(data_i.shape[1], start_i + epoch_window[1])
+        anchor_point = start_i if align_to == "onset" else end_i
+
+        epoch_start_i = max(0, anchor_point + epoch_window[0])
+        epoch_end_i = min(data_i.shape[1], anchor_point + epoch_window[1])
         epoch = data_i[:, epoch_start_i:epoch_end_i]
 
         if subset_electrodes is not None:
             epoch = epoch[subset_electrodes]
 
         if baseline_window is not None:
-            baseline_start_i = max(0, start_i + baseline_window[0])
-            baseline_end_i = min(data_i.shape[1], start_i + baseline_window[1])
+            baseline_start_i = max(0, anchor_point + baseline_window[0])
+            baseline_end_i = min(data_i.shape[1], anchor_point + baseline_window[1])
             baseline = data_i[:, baseline_start_i:baseline_end_i]
             if subset_electrodes is not None:
                 baseline = baseline[subset_electrodes]
@@ -333,7 +340,11 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         epoch_length_i = epoch.shape[1]
 
         if epoch_length_i < epoch_length:
-            pad_width = ((0, 0), (0, epoch_length - epoch_length_i))
+            pad_left = min(0, anchor_point + epoch_window[0])
+            pad_right = max(0, anchor_point + epoch_window[1] - data_i.shape[1])
+            pad_width = ((0, 0), (pad_left, pad_right))
+
+            assert pad_left + epoch_length_i + pad_right == epoch_length
             epoch = np.pad(epoch, pad_width, mode=pad_mode, constant_values=pad_values)
 
         epoch_info.append({
@@ -343,6 +354,16 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             **span
         })
         epochs.append(epoch)
+
+    if drop_outliers:
+        if not zscore:
+            L.warning("Dropping outliers on raw, non-z-scored values. Are you sure about this?")
+        
+        mask = np.abs(epochs).max(axis=(1, 2)) < drop_outliers
+        epochs = [epoch_i for epoch_i, mask_i in zip(epochs, mask) if mask_i]
+        epoch_info = [epoch_info_i for epoch_info_i, mask_i in zip(epoch_info, mask) if mask_i]
+
+        L.info(f"Dropped {len(mask) - mask.sum()} epochs with outliers ({(1 - mask.mean()) * 100 :.2f}%).")
 
     if return_df:
         if len(epochs) == 0:
