@@ -46,6 +46,18 @@ models:
     dataset: timit
     model: rnn_8-aniso3
     equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-aniso1
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-aniso2
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: timit
+    model: rnn_8-aniso3
+    equivalence: word_broad_10frames
 
   - base_model: w2v2_8
     dataset: timit
