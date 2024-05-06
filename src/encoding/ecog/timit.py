@@ -89,7 +89,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
             unit_embedding = model.embeddings[unit_end]
         elif feature_spec.featurization == "mean":
             unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
-        elif isinstance(feature_spec.featurization, (tuple, list)):
+        elif isinstance(feature_spec.featurization, (tuple, list, ListConfig)):
             if feature_spec.featurization[0] == "mean_last_k":
                 k = int(feature_spec.featurization[1])
                 mean_start = max(unit_end - k, unit_start)

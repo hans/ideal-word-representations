@@ -579,6 +579,35 @@ rule estimate_all_permutations:
                            for perm_idx in range(perm["num_permutations"])]
 
 
+rule estimate_encoder_unique_variance:
+    input:
+        encoder = "outputs/encoders/{dataset}/{feature_sets}/{subject}",
+        notebook = "notebooks/encoding/unique_variance.ipynb",
+
+    output:
+        dir = directory("outputs/encoder_unique_variance/{dataset}/{feature_sets}/{subject}"),
+        notebook = "outputs/encoder_unique_variance/{dataset}/{feature_sets}/{subject}/unique_variance.ipynb",
+        unique_variance = "outputs/encoder_unique_variance/{dataset}/{feature_sets}/{subject}/unique_variance.csv"
+
+    run:
+        output_dir = Path(output.unique_variance).parent
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -p encoder_path {input.encoder} \
+            -p output_dir {output_dir}
+        """)
+
+
+rule estimate_all_baseline_unique_variance:
+    input:
+        expand(f"outputs/encoder_unique_variance/{ENCODING_DATASET}/baseline/{{subject}}/unique_variance.csv",
+               subject=ALL_ENCODING_SUBJECTS)
+
+
+
 rule compare_encoder_within_subject:
     input:
         model1_scores = "outputs/encoders/{dataset}/{comparison_model1}/{subject}/scores.csv",
