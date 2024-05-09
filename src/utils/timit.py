@@ -362,3 +362,52 @@ def load_or_prepare_timit_corpus(processed_data_dir,
         corpus = prepare_corpus(raw_corpus, processor, drop_phones=drop_phones)
         corpus.save_to_disk(processed_data_dir)
     return corpus
+
+
+def get_word_metadata(word_state_space):
+    """
+    Augment the given word state space with linguistic data.
+    """
+    word_freq_df = pd.read_csv("data/WorldLex_Eng_US.Freq.2.txt", sep="\t", index_col="Word")
+    # compute weighted average frequency across domains
+    word_freq_df["BlogFreq_rel"] = word_freq_df.BlogFreq / word_freq_df.BlogFreq.sum()
+    word_freq_df["TwitterFreq_rel"] = word_freq_df.TwitterFreq / word_freq_df.TwitterFreq.sum()
+    word_freq_df["NewsFreq_rel"] = word_freq_df.NewsFreq / word_freq_df.NewsFreq.sum()
+    word_freq_df["Freq"] = word_freq_df[["BlogFreq", "TwitterFreq", "NewsFreq"]].mean(axis=1) \
+        * word_freq_df[["BlogFreq", "TwitterFreq", "NewsFreq"]].sum().mean()
+    
+    # Fixes for TIMIT
+    word_freq_df.loc["'em"] = word_freq_df.loc["them"]
+    word_freq_df.loc["cap'n"] = word_freq_df.loc["captain"]
+    word_freq_df.loc["playin'"] = word_freq_df.loc["playing"]
+    word_freq_df.loc["goin'"] = word_freq_df.loc["going"]
+    word_freq_df.loc["takin'"] = word_freq_df.loc["taking"]
+    word_freq_df.loc["givin'"] = word_freq_df.loc["giving"]
+    word_freq_df.loc["doin'"] = word_freq_df.loc["doing"]
+    word_freq_df.loc["y'all"] = word_freq_df.loc["you"]
+    word_freq_df.loc["c'mon"] = word_freq_df.loc["come"]
+    word_freq_df.loc["ma'am"] = word_freq_df.loc["madam"]
+    word_freq_df.loc["herdin'"] = word_freq_df.loc["herding"]
+
+    word_metadata = word_state_space.cuts.xs("syllable", level="level") \
+        .groupby(["label", "instance_idx"]).description.count().rename("num_syllables").to_frame()
+    word_metadata["monosyllabic"] = word_metadata.num_syllables == 1
+    word_metadata["word_freq_lookup"] = word_metadata.index.get_level_values("label") \
+        .str.replace("'([std]|ll|re)$", "", regex=True) \
+        .str.replace("(you|i|we|they)'(ve|m)$", "\\2", regex=True) \
+        .str.replace("(could|would)'ve$", "\\1", regex=True)
+    word_metadata["word_frequency"] = word_metadata.word_freq_lookup.map(word_freq_df.Freq.to_dict())
+    missing_words = word_metadata[word_metadata.word_frequency.isna()].index.get_level_values("label").unique()
+    print("Missing words: ", missing_words.to_list())
+    word_metadata["word_frequency"] = word_metadata.word_frequency.fillna(np.percentile(word_freq_df.Freq, 2))
+    print("Word frequency tertile split:\n", word_metadata.word_frequency.quantile([0.33, 0.66]))
+    word_metadata["word_frequency_quantile"] = pd.qcut(word_metadata.word_frequency, 3, labels=["low", "med", "high"])
+    print(word_metadata.groupby("word_frequency_quantile").apply(lambda xs: xs.sample(5).index.get_level_values("label").to_list()))
+
+    word_phoneme_metadata = word_state_space.cuts.xs("phoneme", level="level") \
+        .groupby(["label", "instance_idx", "item_idx"]).apply(
+            lambda xs: pd.Series({"onset_phoneme": xs.iloc[0].description,
+                                "onset_biphone": xs.description.iloc[:2].str.cat(sep=" ")}))
+
+    return pd.merge(word_metadata, word_phoneme_metadata, left_index=True, right_index=True,
+                    how="left", validate="one_to_one")
