@@ -697,6 +697,37 @@ rule compare_all_encoders_across_subject:
         """)
 
 
+rule electrode_study_within_subject:
+    input:
+        ttest_results = "outputs/encoder_comparison_across_subjects/{dataset}/ttest.csv",
+        scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
+        unique_variance = "outputs/encoder_unique_variance/{dataset}/baseline/{subject}/unique_variance.csv",
+        notebook = "notebooks/encoding/electrode_study_within_subject.ipynb",
+
+    output:
+        dir = directory("outputs/electrode_study/{dataset}/{subject}"),
+        notebook = "outputs/electrode_study/{dataset}/{subject}/notebook.ipynb"
+
+    shell:
+        """
+        export PYTHONPATH=`pwd`
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -p dataset {wildcards.dataset} \
+            -p subject {wildcards.subject} \
+            -p ttest_results_path {input.ttest_results} \
+            -p scores_path {input.scores} \
+            -p unique_variance_path {input.unique_variance} \
+            -p output_dir {output.dir}
+        """
+
+
+rule electrode_study_within_subject_all:
+    input:
+        lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
+                   for subject in ALL_ENCODING_SUBJECTS],
+
+
 rule colocation_study_within_subject:
     input:
         encoder_ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
