@@ -1,6 +1,8 @@
 datasets:
   timit:
     raw_path: data/timit_raw
+  timit-no_repeats:
+    raw_path: data/timit_raw
 
 
 models:
@@ -123,6 +125,12 @@ models:
     dataset: timit
     model: randomff_32
     equivalence: random
+
+  # no repeats
+  - base_model: w2v2_8
+    dataset: timit-no_repeats
+    model: rnn_8-aniso2
+    equivalence: word_broad_10frames
 
 encoding:
   data:

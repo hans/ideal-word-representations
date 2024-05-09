@@ -11,7 +11,7 @@ ruleorder:
     run_no_train > run
 
 wildcard_constraints:
-    dataset = r"[a-z0-9_]+",
+    dataset = r"[a-z0-9_-]+",
 #     feature_sets = r"[a-z0-9_]+",
 #     subject = r"[a-z0-9_]+",
 
@@ -100,14 +100,14 @@ rule prepare_audioset:
         """
 
 
-rule preprocess_timit:
+rule preprocess:
     input:
-        timit_raw = config["datasets"]["timit"]["raw_path"],
+        timit_raw = lambda wildcards: config["datasets"][wildcards.dataset]["raw_path"],
         script = "notebooks/preprocessing/timit.ipynb"
 
     output:
-        data_path = directory("outputs/preprocessed_data/timit"),
-        notebook_path = "outputs/preprocessing/timit.ipynb"
+        data_path = directory("outputs/preprocessed_data/{dataset}"),
+        notebook_path = "outputs/preprocessing/{dataset}/timit.ipynb"
 
     shell:
         """
@@ -115,6 +115,7 @@ rule preprocess_timit:
             {output.notebook_path} \
             -p base_dir {workflow.basedir} \
             -p dataset_path {input.timit_raw} \
+            -p dataset_name {wildcards.dataset} \
             -p out_path {output.data_path}
         """
 
