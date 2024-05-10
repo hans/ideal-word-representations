@@ -364,7 +364,7 @@ def load_or_prepare_timit_corpus(processed_data_dir,
     return corpus
 
 
-def get_word_metadata(word_state_space):
+def get_word_metadata(word_state_space, num_frequency_quantiles=3):
     """
     Augment the given word state space with linguistic data.
     """
@@ -400,8 +400,8 @@ def get_word_metadata(word_state_space):
     missing_words = word_metadata[word_metadata.word_frequency.isna()].index.get_level_values("label").unique()
     print("Missing words: ", missing_words.to_list())
     word_metadata["word_frequency"] = word_metadata.word_frequency.fillna(np.percentile(word_freq_df.Freq, 2))
-    print("Word frequency tertile split:\n", word_metadata.word_frequency.quantile([0.33, 0.66]))
-    word_metadata["word_frequency_quantile"] = pd.qcut(word_metadata.word_frequency, 3, labels=["low", "med", "high"])
+    print("Word frequency quantile split:\n", word_metadata.word_frequency.quantile(np.linspace(0, 1, num_frequency_quantiles + 1)))
+    word_metadata["word_frequency_quantile"] = pd.qcut(word_metadata.word_frequency, num_frequency_quantiles, labels=list(map(str, np.arange(num_frequency_quantiles))))
     print(word_metadata.groupby("word_frequency_quantile").apply(lambda xs: xs.sample(5).index.get_level_values("label").to_list()))
 
     word_phoneme_metadata = word_state_space.cuts.xs("phoneme", level="level") \
