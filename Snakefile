@@ -638,7 +638,6 @@ rule compare_encoder_within_subject:
 
     run:
         # group permutation scores by permutation test
-        assert wildcards.dataset == ENCODING_DATASET
         permutation_scores = {
             perm_name: [
                 f"outputs/encoders-permute_{perm_name}/{perm_idx}/{wildcards.dataset}/{wildcards.comparison_model2}/{wildcards.subject}/scores.csv"
