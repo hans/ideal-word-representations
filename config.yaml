@@ -38,27 +38,11 @@ models:
   # aniso outcomes
   - base_model: w2v2_6
     dataset: timit
-    model: rnn_8-aniso1
-    equivalence: word_broad_10frames
-  - base_model: w2v2_6
-    dataset: timit
-    model: rnn_8-aniso2
-    equivalence: word_broad_10frames
-  - base_model: w2v2_6
-    dataset: timit
-    model: rnn_8-aniso3
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: timit
-    model: rnn_8-aniso1
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: timit
     model: rnn_8-aniso2
     equivalence: word_broad_10frames
   - base_model: w2v2_8
     dataset: timit
-    model: rnn_8-aniso3
+    model: rnn_8-aniso2
     equivalence: word_broad_10frames
 
   - base_model: w2v2_8
@@ -174,42 +158,42 @@ encoding:
       model1: baseline
     - model2: random8
       model1: baseline
-    - model2: word_broad
-      model1: baseline
+    # - model2: word_broad
+    #   model1: baseline
 
-    - model2: phoneme-w2v2_8
-      model1: baseline
-    - model2: next_phoneme-w2v2_8
-      model1: baseline
-    - model2: biphone_recon-w2v2_8
-      model1: baseline
-    - model2: biphone_pred-w2v2_8
-      model1: baseline
-    - model2: syllable-w2v2_8
-      model1: baseline
-    - model2: random8-w2v2_8
-      model1: baseline
-    - model2: word_broad-w2v2_8
-      model1: baseline
+    # - model2: phoneme-w2v2_8
+    #   model1: baseline
+    # - model2: next_phoneme-w2v2_8
+    #   model1: baseline
+    # - model2: biphone_recon-w2v2_8
+    #   model1: baseline
+    # - model2: biphone_pred-w2v2_8
+    #   model1: baseline
+    # - model2: syllable-w2v2_8
+    #   model1: baseline
+    # - model2: random8-w2v2_8
+    #   model1: baseline
+    # - model2: word_broad-w2v2_8
+    #   model1: baseline
 
-    - model2: word_broad-aniso1
-      model1: baseline
-    - model2: word_broad-aniso2
-      model1: baseline
-    - model2: word_broad-aniso3
-      model1: baseline
+    # - model2: word_broad-aniso1
+    #   model1: baseline
+    # - model2: word_broad-aniso2
+    #   model1: baseline
+    # - model2: word_broad-aniso3
+    #   model1: baseline
 
-    - model2: word_broad-aniso1-w2v2_8
-      model1: baseline
+    # - model2: word_broad-aniso1-w2v2_8
+    #   model1: baseline
     - model2: word_broad-aniso2-w2v2_8
       model1: baseline
-    - model2: word_broad-aniso3-w2v2_8
-      model1: baseline
+    # - model2: word_broad-aniso3-w2v2_8
+    #   model1: baseline
 
-    - model2: word_broad-aniso2-w2v2_8-meanlast5
-      model1: baseline
-    - model2: word_broad-aniso3-w2v2_8-meanlast5
-      model1: baseline
+    # - model2: word_broad-aniso2-w2v2_8-meanlast5
+    #   model1: baseline
+    # - model2: word_broad-aniso3-w2v2_8-meanlast5
+    #   model1: baseline
 
   permutation_tests:
     units:

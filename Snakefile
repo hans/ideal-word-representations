@@ -726,6 +726,11 @@ rule electrode_study_within_subject_all:
         lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
                    for subject in ALL_ENCODING_SUBJECTS],
 
+rule electrode_study_within_subject_all_no_repeats:
+    input:
+        lambda _: [f"outputs/electrode_study/timit-no_repeats/{subject}/"
+                   for subject in ALL_ENCODING_SUBJECTS],
+
 
 rule colocation_study_within_subject:
     input:

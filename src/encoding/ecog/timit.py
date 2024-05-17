@@ -145,12 +145,13 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
     return out
 
 
-def prepare_xy(config: DictConfig, data_spec: DictConfig) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]], np.ndarray]:
+def prepare_xy(config: DictConfig, data_spec: DictConfig,
+               center_features=True, scale_features=True) -> tuple[np.ndarray, np.ndarray, list[str], list[tuple[int]], np.ndarray]:
     out = prepare_out_file(config, data_spec)
     feature_sets = config.feature_sets.baseline_features[:]
 
-    center_features = [True] * len(feature_sets)
-    scale_features = [True] * len(feature_sets)
+    center_features = [center_features] * len(feature_sets)
+    scale_features = [scale_features] * len(feature_sets)
 
     # add model embeddings to out
     if getattr(config.feature_sets, "model_features", None):
