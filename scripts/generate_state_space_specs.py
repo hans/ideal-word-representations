@@ -199,9 +199,75 @@ def compute_phoneme_state_space(dataset: datasets.Dataset,
     }
 
 
+def compute_biphone_state_space(dataset: datasets.Dataset,
+                                hidden_state_dataset: SpeechHiddenStateDataset,
+                                ):
+    frames_by_item = hidden_state_dataset.frames_by_item
+
+    from collections import defaultdict
+    frame_spans_by_biphone = defaultdict(list)
+    cuts_df = []
+
+    def process_item(item):
+        # How many frames do we have stored for this item?
+        start_frame, stop_frame = frames_by_item[item["idx"]]
+        num_frames = stop_frame - start_frame
+
+        compression_ratio = num_frames / len(item["input_values"])
+
+        for word in item["word_phonemic_detail"]:
+            if len(word) == 0:
+                continue
+
+            start_dummy = {"phone": "#", "start": word[0]["start"], "stop": word[0]["stop"]}
+            end_dummy = {"phone": "#", "start": word[-1]["start"], "stop": word[-1]["stop"]}
+            word = [start_dummy] + word + [end_dummy]
+                                     
+            for i, (p1, p2) in enumerate(zip(word, word[1:])):
+                biphone_start_frame = start_frame + int(p1["start"] * compression_ratio)
+                biphone_stop_frame = start_frame + int(p2["stop"] * compression_ratio)
+
+                biphone_label = (p1["phone"], p2["phone"])
+                instance_idx = len(frame_spans_by_biphone[biphone_label])
+                frame_spans_by_biphone[biphone_label].append((biphone_start_frame, biphone_stop_frame))
+
+                # add constituent phonemes to cuts
+                cuts_df.append({
+                    "label": biphone_label,
+                    "instance_idx": instance_idx,
+                    "level": "phoneme",
+                    "description": p1["phone"],
+                    "onset_frame_idx": start_frame + int(p1["start"] * compression_ratio),
+                    "offset_frame_idx": start_frame + int(p1["stop"] * compression_ratio),
+                    "item_idx": item["idx"],
+                })
+                cuts_df.append({
+                    "label": biphone_label,
+                    "instance_idx": instance_idx,
+                    "level": "phoneme",
+                    "description": p2["phone"],
+                    "onset_frame_idx": start_frame + int(p2["start"] * compression_ratio),
+                    "offset_frame_idx": start_frame + int(p2["stop"] * compression_ratio),
+                    "item_idx": item["idx"],
+                })
+
+    dataset.map(process_item, batched=False)
+
+    biphones = sorted(frame_spans_by_biphone.keys())
+    return {
+        "biphone": StateSpaceAnalysisSpec(
+            total_num_frames=hidden_state_dataset.num_frames,
+            labels=biphones,
+            target_frame_spans = [frame_spans_by_biphone[b] for b in biphones],
+            cuts=pd.DataFrame(cuts_df).set_index(["label", "instance_idx", "level"]).sort_index(),
+        )
+    }
+
+
 STATE_SPACE_COMPUTERS = {
     "word": compute_word_state_space,
     "syllable": compute_syllable_state_space,
+    "biphone": compute_biphone_state_space,
     "phoneme": compute_phoneme_state_space,
 }
 
