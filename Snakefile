@@ -732,44 +732,6 @@ rule electrode_study_within_subject_all_no_repeats:
                    for subject in ALL_ENCODING_SUBJECTS],
 
 
-rule colocation_study_within_subject:
-    input:
-        encoder_ttest = "outputs/encoder_comparison_across_subjects/{dataset}/ttest_filtered.csv",
-        encoder_scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
-        notebook = "notebooks/encoding/colocation_within_subject.ipynb",
-        encoders = lambda wildcards: {
-            f"outputs/encoders/{{dataset}}/{comp[comp_key]}/{{subject}}/"
-            for comp in config["encoding"]["model_comparisons"]
-            for comp_key in ["model1", "model2"]
-        },
-
-    output:
-        dir = directory("outputs/encoder_colocation_study/{dataset}/{subject}"),
-        notebook = "outputs/encoder_colocation_study/{dataset}/{subject}/notebook.ipynb",
-
-    run:
-        params = {
-            "dataset": wildcards.dataset,
-            "subject": wildcards.subject,
-            "ttest_results_path": input.encoder_ttest,
-            "scores_path": input.encoder_scores,
-            "output_dir": output.dir,
-            "encoder_dirs": list(map(str, input.encoders)),
-        }
-
-        shell(f"""
-        papermill --log-output \
-            {input.notebook} {output.notebook} \
-            -y "{yaml.safe_dump(params)}"
-        """)
-
-
-rule all_colocation_studies:
-    input:
-        lambda _: [f"outputs/encoder_colocation_study/{ENCODING_DATASET}/{subject}/"
-                   for subject in ALL_ENCODING_SUBJECTS],
-
-
 rule estimate_rsa:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
