@@ -7,6 +7,8 @@ HTTP = HTTPRemoteProvider()
 
 configfile: "config.yaml"
 
+include: "workflows/librispeech/Snakefile"
+
 ruleorder:
     run_no_train > run
 
