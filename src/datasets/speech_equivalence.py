@@ -1,17 +1,14 @@
 from collections import defaultdict
 from beartype import beartype
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
-import os
-import pickle
-from typing import TypeAlias, Callable, Any, Hashable
+from typing import TypeAlias, Callable, Any, Hashable, Optional
 
 import datasets
 from jaxtyping import Float, Int64
 import numpy as np
 import torch
 from torch import Tensor as T
-import transformers
 
 
 # defines the critical logic by which frames are equivalence-classed.
@@ -167,12 +164,6 @@ class SpeechEquivalenceDataset:
         # If Q is set, then S should be set
         assert (self.Q == -1).logical_or(self.S != -1).all()
 
-        # Sanity check: no crazy long events
-        insane_length = 100
-        evident_lengths = self.lengths
-        evident_lengths = evident_lengths[evident_lengths != -1]
-        assert evident_lengths.max() < insane_length
-
     def __repr__(self):
         return f"SpeechEquivalenceDataset({self.name}, {self.num_classes} classes, {self.num_instances} instances)"
 
@@ -193,11 +184,26 @@ class SpeechEquivalenceDataset:
         lengths[self.S == -1] = -1
         return lengths
     
+    def drop_lengths(self, max_length: int) -> "SpeechEquivalenceDataset":
+        """
+        Drop all frames with length greater than `max_length`.
+        """
+        mask = self.lengths > max_length
+
+        new_Q = self.Q.clone()
+        new_Q[mask] = -1
+        new_S = self.S.clone()
+        new_S[mask] = -1
+
+        return replace(self, Q=new_Q, S=new_S)
+    
 
 def make_timit_equivalence_dataset(name: str,
                                    dataset: datasets.Dataset,
                                    hidden_states: SpeechHiddenStateDataset,
                                    equivalence_classer: str,
+                                   minimum_frequency_percentile: float = 0.,
+                                   max_length: Optional[int] = 100,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
     TIMIT-specific function to prepare an equivalence-classed frame dataset
@@ -238,6 +244,18 @@ def make_timit_equivalence_dataset(name: str,
                     if class_label is not None:
                         frame_groups[class_label].append((idx, k))
     dataset.map(process_item, with_indices=True, desc="Aligning metadata")
+
+    if minimum_frequency_percentile > 0:
+        # Filter out low-frequency classes
+        class_counts = {class_key: len(group) for class_key, group in frame_groups.items()}
+        class_counts = np.array(list(class_counts.values()))
+        min_count = np.percentile(class_counts, minimum_frequency_percentile)
+
+        len_before = len(frame_groups)
+        frame_groups = {class_key: group for class_key, group in frame_groups.items() if len(group) >= min_count}
+        len_after = len(frame_groups)
+        print(f"Filtered out {len_before - len_after} classes with fewer than {min_count} frames")
+        print(f"Remaining classes: {len_after}")
 
     # Now run equivalence classing.
     Q = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
@@ -301,7 +319,10 @@ def make_timit_equivalence_dataset(name: str,
     
     dataset.map(compute_start, with_indices=True, desc="Computing start frames")
 
-    return SpeechEquivalenceDataset(name=name,
-                                    Q=Q,
-                                    S=S,
-                                    class_labels=class_labels)
+    ret = SpeechEquivalenceDataset(name=name,
+                                   Q=Q,
+                                   S=S,
+                                   class_labels=class_labels)
+    if max_length is not None:
+        ret = ret.drop_lengths(max_length)
+    return ret
