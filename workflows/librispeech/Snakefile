@@ -36,11 +36,12 @@ rule preprocess_librispeech:
         data_path = directory("outputs/preprocessed_data/librispeech-{split}"),
         notebook_path = "outputs/preprocessing/librispeech-{split}/notebook.ipynb",
 
-    shell:
-        """
+    run:
+        shell("""
         papermill --log-output {input.notebook} \
             {output.notebook_path} \
+            -p split {wildcards.split} \
             -p data_dir {input.dataset} \
             -p alignment_dir {input.alignments} \
             -p out_path {output.data_path}
-        """
+        """)
