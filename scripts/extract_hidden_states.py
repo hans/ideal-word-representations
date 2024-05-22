@@ -19,7 +19,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
                           model: transformers.Wav2Vec2Model,
                           processor: transformers.Wav2Vec2Processor,
                           layer: int,
-                          batch_size=32) -> SpeechHiddenStateDataset:
+                          batch_size=8) -> SpeechHiddenStateDataset:
     flat_idxs = []
     frame_states_list = []
 
