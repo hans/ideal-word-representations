@@ -166,6 +166,9 @@ class LibrispeechASR(datasets.GeneratorBasedBuilder):
 
             for audio_path in chapter_path.glob("*.wav"):
                 full_id = audio_path.stem
+                if full_id not in alignments:
+                    continue
+
                 yield full_id, {
                     "id": full_id,
                     "speaker_id": speaker_id,
