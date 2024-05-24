@@ -239,6 +239,9 @@ def get_sequence(F, start_index, end_index, max_length):
     if end_index - start_index + 1 > max_length:
         start_index = end_index - max_length + 1
     sequence = F[start_index:end_index + 1]
+
+    if not isinstance(sequence, torch.Tensor):
+        sequence = torch.tensor(sequence)
     
     # Pad on right if necessary
     if len(sequence) < max_length:

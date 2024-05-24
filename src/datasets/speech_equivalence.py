@@ -2,9 +2,11 @@ from collections import defaultdict
 from beartype import beartype
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import TypeAlias, Callable, Any, Hashable, Optional
+from pathlib import Path
+from typing import TypeAlias, Callable, Any, Hashable, Optional, Union
 
 import datasets
+import h5py
 from jaxtyping import Float, Int64
 import numpy as np
 import torch
@@ -105,6 +107,20 @@ class SpeechHiddenStateDataset:
     def __repr__(self):
         return f"SpeechHiddenStateDataset({self.model_name}, {self.num_items} items, {self.num_frames} frames, {self.num_layers} layers, {self.states.shape[2]} hidden size)"
     __str__ = __repr__
+
+    def to_hdf5(self, path: str):
+        with h5py.File(path, "w") as f:
+            f.attrs["model_name"] = self.model_name
+            f.create_dataset("states", data=self.states.numpy())
+            f.create_dataset("flat_idxs", data=self.flat_idxs, dtype=np.int32)
+    
+    @classmethod
+    def from_hdf5(cls, path: Union[str, Path]):
+        with h5py.File(path, "r") as f:
+            model_name = f.attrs["model_name"]
+            states = f["states"]  # NB not loading into memory
+            flat_idxs = f["flat_idxs"][:]
+        return cls(model_name=model_name, states=states, flat_idxs=flat_idxs)
 
     @property
     def num_frames(self) -> int:

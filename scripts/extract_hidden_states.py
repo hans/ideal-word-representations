@@ -72,8 +72,7 @@ def main(config: DictConfig):
     hidden_state_dataset = extract_hidden_states(
         dataset, model, processor, config.base_model.layer)
     
-    with open(Path(HydraConfig.get().runtime.output_dir) / "hidden_states.pkl", "wb") as f:
-        torch.save(hidden_state_dataset, f)
+    hidden_state_dataset.to_hdf5(Path(HydraConfig.get().runtime.output_dir) / "hidden_states.h5")
 
 
 if __name__ == "__main__":
