@@ -275,9 +275,7 @@ STATE_SPACE_COMPUTERS = {
 def main(config: DictConfig):
     dataset = cast(datasets.Dataset, datasets.load_from_disk(config.dataset.processed_data_dir))
 
-    hidden_state_path = config.base_model.hidden_state_path
-    with open(hidden_state_path, "rb") as f:
-        hidden_states: SpeechHiddenStateDataset = torch.load(f)
+    hidden_states = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
 
     all_state_space_specs = {}
     for name, computer in STATE_SPACE_COMPUTERS.items():

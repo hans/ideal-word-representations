@@ -69,8 +69,7 @@ def train(config: DictConfig):
     dataset = datasets.load_from_disk(config.dataset.processed_data_dir)
     assert not isinstance(dataset, datasets.DatasetDict), "should be a Dataset, not be a DatasetDict"
 
-    with open(config.base_model.hidden_state_path, "rb") as f:
-        hidden_state_dataset: SpeechHiddenStateDataset = torch.load(f)
+    hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
 
     with open(config.equivalence.path, "rb") as f:
         equiv_dataset: SpeechEquivalenceDataset = torch.load(f)

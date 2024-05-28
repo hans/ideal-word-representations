@@ -19,9 +19,7 @@ def main(config: DictConfig):
     model.eval()
     model = model.to(config.device)
 
-    hidden_state_path = config.base_model.hidden_state_path
-    with open(hidden_state_path, "rb") as f:
-        hidden_states: SpeechHiddenStateDataset = torch.load(f)
+    hidden_states = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
 
     equiv_dataset_path = config.equivalence.path
     with open(equiv_dataset_path, "rb") as f:
