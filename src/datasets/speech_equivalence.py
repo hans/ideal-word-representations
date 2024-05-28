@@ -97,6 +97,8 @@ class SpeechHiddenStateDataset:
     # mapping from flattened frame index to (item index, frame index)
     flat_idxs: list[tuple[int, int]]
 
+    _file_handle: Optional[h5py.File] = None
+
     def __post_init__(self):
         assert self.states.ndim == 3
         assert len(self.flat_idxs) == self.states.shape[0]
@@ -116,11 +118,13 @@ class SpeechHiddenStateDataset:
     
     @classmethod
     def from_hdf5(cls, path: Union[str, Path]):
-        with h5py.File(path, "r") as f:
-            model_name = f.attrs["model_name"]
-            states = f["states"]  # NB not loading into memory
-            flat_idxs = f["flat_idxs"][:]
-            return cls(model_name=model_name, states=states, flat_idxs=flat_idxs)
+        f = h5py.File(path, "r")
+        model_name = f.attrs["model_name"]
+        states = f["states"]  # NB not loading into memory
+        flat_idxs = f["flat_idxs"][:]
+
+        return cls(model_name=model_name, states=states, flat_idxs=flat_idxs,
+                    _file_handle=f)
 
     @property
     def num_frames(self) -> int:

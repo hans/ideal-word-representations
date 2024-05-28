@@ -31,7 +31,7 @@ def make_model_init(config: integrator.ContrastiveEmbeddingModelConfig, device="
 
 
 def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
-                        hidden_state_dataset: SpeechHiddenStateDataset, **kwargs
+                        hidden_states_path: str, **kwargs
                         ) -> tuple[int, datasets.IterableDataset, datasets.IterableDataset, int]:
     # Pick a max length that accommodates the majority of the samples,
     # excluding outlier lengths
@@ -40,7 +40,7 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
     num_examples, train_dataset, eval_dataset = integrator.prepare_dataset(
-        equiv_dataset, hidden_state_dataset, target_length, **kwargs)
+        equiv_dataset, hidden_states_path, target_length, **kwargs)
 
     return num_examples, train_dataset, eval_dataset, target_length
 
@@ -69,6 +69,7 @@ def train(config: DictConfig):
     dataset = datasets.load_from_disk(config.dataset.processed_data_dir)
     assert not isinstance(dataset, datasets.DatasetDict), "should be a Dataset, not be a DatasetDict"
 
+    hidden_states_path = config.base_model.hidden_state_path
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
 
     with open(config.equivalence.path, "rb") as f:
@@ -77,7 +78,7 @@ def train(config: DictConfig):
     # Prepare negative-sampling dataset
     if config.trainer.mode in ["train", "hyperparameter_search"]:
         total_num_examples, train_dataset, eval_dataset, max_length = prepare_neg_dataset(
-            equiv_dataset, hidden_state_dataset)
+            equiv_dataset, hidden_states_path)
         
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = eval_dataset.with_format("torch")

@@ -253,12 +253,13 @@ def get_sequence(F, start_index, end_index, max_length):
 
 
 def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
-                 hidden_state_dataset: SpeechHiddenStateDataset,
+                 hidden_states_path: str,
                  max_length: int,
                  num_examples: Optional[int] = None,
                  layer: Optional[int] = None,
                  select_idxs: Optional[list[int]] = None,
                  infinite=True) -> Iterator[dict]:
+    hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
     if layer is None and hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
@@ -331,7 +332,7 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
 
 
 def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
-                    hidden_state_dataset: SpeechHiddenStateDataset,
+                    hidden_states_path: str,
                     max_length: int,
                     layer: Optional[int] = None,
                     eval_fraction=0.1,
@@ -355,7 +356,7 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
 
     dataset_kwargs = {
         "equiv_dataset": equiv_dataset,
-        "hidden_state_dataset": hidden_state_dataset,
+        "hidden_states_path": hidden_states_path,
         "max_length": max_length,
         "layer": layer,
         **kwargs
