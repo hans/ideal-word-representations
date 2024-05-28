@@ -32,6 +32,7 @@ ALL_MODEL_NOTEBOOKS = [
     "predictions_word",
     "state_space",
     "trf",
+    "word_discrimination",
 ]
 
 
@@ -161,6 +162,7 @@ rule prepare_equivalence_dataset:
 
         shell("""
         export PYTHONPATH=`pwd`
+        export HDF5_USE_FILE_LOCKING=FALSE
         python scripts/make_equivalence_dataset.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
@@ -203,6 +205,7 @@ rule run:
 
         shell("""
         export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
             dataset.processed_data_dir={input.dataset} \
@@ -235,6 +238,7 @@ rule tune_hparam:
 
         shell("""
         export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
             trainer.mode=hyperparameter_search \
@@ -264,6 +268,7 @@ rule run_no_train:
 
     shell:
         """
+        export HDF5_USE_FILE_LOCKING=FALSE
         python train_decoder.py \
             hydra.run.dir={output.full_trace} \
             dataset.processed_data_dir={input.dataset} \
@@ -300,6 +305,7 @@ rule extract_embeddings:
 
         shell("""
         export PYTHONPATH=`pwd`
+        export HDF5_USE_FILE_LOCKING=FALSE
         export CUDA_VISIBLE_DEVICES={gpu_device}
         python scripts/extract_model_embeddings.py \
             hydra.run.dir={outdir} \
@@ -326,6 +332,7 @@ rule compute_state_spaces:
 
         shell("""
         export PYTHONPATH=`pwd`
+        export HDF5_USE_FILE_LOCKING=FALSE
         python scripts/generate_state_space_specs.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
@@ -360,6 +367,7 @@ rule run_notebook:
 
     shell:
         """
+        export HDF5_USE_FILE_LOCKING=FALSE
         papermill --log-output \
             {input.notebook} {output.notebook} \
             -p model_dir {input.model_dir} \
@@ -452,6 +460,7 @@ rule estimate_synthetic_encoder:
         }
 
         shell(f"""
+        export HDF5_USE_FILE_LOCKING=FALSE
         papermill --log-output \
             {input.notebook} {output.notebook} \
             -y "{yaml.safe_dump(params)}"
