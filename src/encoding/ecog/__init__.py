@@ -51,8 +51,7 @@ class ContrastiveModelSnapshot:
 
         with open(feature_spec.equivalence_path, "rb") as f:
             equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
-        with open(feature_spec.hidden_state_path, "rb") as f:
-            hidden_states: SpeechHiddenStateDataset = torch.load(f)
+        hidden_states = SpeechHiddenStateDataset.from_hdf5(feature_spec.hidden_state_path)
         with open(feature_spec.state_space_path, "rb") as f:
             all_state_spaces: dict[str, StateSpaceAnalysisSpec] = torch.load(f)
         state_space = all_state_spaces[feature_spec.state_space]
