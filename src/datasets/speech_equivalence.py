@@ -92,7 +92,8 @@ class SpeechHiddenStateDataset:
     model_name: str
 
     # num_frames * num_layers * hidden_size
-    states: Float[T, "num_frames num_layers hidden_size"]
+    # states: Float[T, "num_frames num_layers hidden_size"]
+    states: h5py.Dataset
 
     # mapping from flattened frame index to (item index, frame index)
     flat_idxs: list[tuple[int, int]]
@@ -104,7 +105,7 @@ class SpeechHiddenStateDataset:
         assert len(self.flat_idxs) == self.states.shape[0]
 
     def get_layer(self, layer: int) -> torch.Tensor:
-        return self.states[:, layer, :]
+        return torch.tensor(self.states[:, layer, :][()])
 
     def __repr__(self):
         return f"SpeechHiddenStateDataset({self.model_name}, {self.num_items} items, {self.num_frames} frames, {self.num_layers} layers, {self.states.shape[2]} hidden size)"
