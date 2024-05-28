@@ -277,7 +277,7 @@ def make_timit_equivalence_dataset(name: str,
     Q = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
     class_labels = list(frame_groups.keys())
     class_label_to_idx = {class_key: idx for idx, class_key in enumerate(class_labels)}
-    flat_idx_rev = {idx: i for i, idx in enumerate(hidden_states.flat_idxs)}
+    flat_idx_rev = {tuple(idx): i for i, idx in enumerate(hidden_states.flat_idxs)}
     for class_key, group in frame_groups.items():
         for idx, frame in group:
             Q[flat_idx_rev[idx, frame]] = class_label_to_idx[class_key]
