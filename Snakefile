@@ -131,7 +131,7 @@ rule extract_hidden_states:
         gpu = 1
 
     output:
-        "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
+        "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5"
 
     run:
         outdir = Path(output[0]).parent
@@ -150,7 +150,7 @@ rule extract_hidden_states:
 rule prepare_equivalence_dataset:
     input:
         timit_data = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         equivalence_config = "conf/equivalence/{equivalence_classer}.yaml"
 
     output:
@@ -189,7 +189,7 @@ rule run:
         model_config = "conf/model/{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
     resources:
@@ -221,7 +221,7 @@ rule tune_hparam:
         model_config = "conf/model/{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
     resources:
@@ -256,7 +256,7 @@ rule run_no_train:
         model_config = "conf/model/random{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NO_TRAIN_DEFAULT_EQUIVALENCE}/equivalence.pkl"
 
     output:
@@ -285,7 +285,7 @@ rule run_all:
 rule extract_embeddings:
     input:
         model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         equivalence_dataset = get_equivalence_dataset
 
     resources:
@@ -316,7 +316,7 @@ rule extract_embeddings:
 rule compute_state_spaces:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl"
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5"
 
     output:
         "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl"
@@ -350,7 +350,7 @@ rule run_notebook:
         phoneme_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_PHONEME_EQUIVALENCE}/equivalence.pkl",
         word_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_WORD_EQUIVALENCE}/equivalence.pkl",
 
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
         state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
 
@@ -386,7 +386,7 @@ def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) 
 
     ret = {
         "hidden_states": [
-            f"outputs/hidden_states/{dataset}/{feat['base_model']}/hidden_states.pkl"
+            f"outputs/hidden_states/{dataset}/{feat['base_model']}/hidden_states.h5"
             for _, feat in model_config.get("model_features", {}).items()
         ],
 
@@ -415,7 +415,7 @@ def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) 
 rule estimate_synthetic_encoder:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{target_model_name}/hidden_states.pkl",
+        hidden_states = "outputs/hidden_states/{dataset}/{target_model_name}/hidden_states.h5",
         computed_inputs = lambda wildcards: itertools.chain.from_iterable(
             _get_inputs_for_encoding(feature_set, wildcards.dataset, return_list=True)
             for feature_set in config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]["models"]
