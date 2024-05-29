@@ -404,7 +404,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
 
 
 def get_electrode_df(config, subject: str):
-    electrode_path = Path(config.corpus.paths.data_path) / subject / "BilingVowel" / "imaging" / "elecs" / "TDT_elecs_all.mat"
+    electrode_path = Path(config.corpus.paths.imaging_path) / subject / "elecs" / "TDT_elecs_all.mat"
     elecs = loadmat(electrode_path, simplify_cells=True)["anatomy"]
     ret = pd.DataFrame(elecs, columns=["electrode_name", "long_name", "type", "roi"]) \
         .set_index("electrode_name", append=True)

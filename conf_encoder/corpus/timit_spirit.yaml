@@ -4,6 +4,7 @@ sentdetV: v4
 
 paths:
   corpus_path: /data_store1/human/prcsd_data
+  imaging_path: /data_store2/imaging/subjects
   data_path: /userdata/ilinabg/data
   info_path: /userdata/jgauthier/ilina_timit/speech_analysis
   out_file_glob: "HilbAA_70to150_8band*out_resp_log.mat"
