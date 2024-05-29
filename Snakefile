@@ -479,6 +479,8 @@ def make_encoder_data_spec(include_subjects=None):
     data_spec = config["encoding"]["data"]
     if include_subjects is not None:
         data_spec = [d for d in data_spec if d["subject"] in include_subjects]
+        if len(data_spec) == 0:
+            raise ValueError(f"No data for subjects {include_subjects}")
 
     # Now expand by block
     data_spec = [{"subject": d["subject"], "block": block}
