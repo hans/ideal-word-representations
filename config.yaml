@@ -137,6 +137,9 @@ encoding:
     - subject: EC212
       blocks:
         - B13
+      fit_channels:
+        start: 0
+        end: 384
 
     # good frontal coverage
     # - subject: EC208

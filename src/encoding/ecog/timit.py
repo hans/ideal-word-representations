@@ -161,8 +161,13 @@ def prepare_xy(config: DictConfig, data_spec: DictConfig,
         center_features.append(False)
         scale_features.append(False)
 
+    fit_response_dimensions = None
+    if "fit_channels" in data_spec:
+        fit_response_dimensions = range(data_spec.fit_channels.start, data_spec.fit_channels.end)
+
     X, Y, feature_names, feature_shapes, trial_onsets = prepare_strf_xy(
         out, feature_sets, data_spec.subject,
+        fit_response_dimensions=fit_response_dimensions,
         center_features=np.array(center_features),
         scale_features=np.array(scale_features))
     
@@ -334,21 +339,6 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     - trial_onsets: np.ndarray, shape (n_trials, 2), trial index and sample at which this trial has onset
     """
     response_field = response_field or 'resp'
-
-    if fit_response_dimensions is None:
-        # TODO this should go in a config file somewhere
-        if subject_id in ['EC53', 'EC85', 'EC89', 'EC143']:
-            fit_response_dimensions = list(range(288))
-        elif subject_id in ['EC212']:
-            fit_response_dimensions = list(range(384))
-        elif subject_id in ['EC75', 'EC124', 'EC200']:
-            fit_response_dimensions = list(range(64))
-        elif subject_id in ['EC177', 'EC161']:
-            fit_response_dimensions = list(range(128))
-        elif subject_id in ['EC193']:
-            fit_response_dimensions = list(range(274))
-        else:
-            fit_response_dimensions = list(range(256))
     
     # estimation parameters
     if isinstance(center_features, bool):
