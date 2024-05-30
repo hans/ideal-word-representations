@@ -184,7 +184,13 @@ class SpeechEquivalenceDataset:
     Q: Int64[T, "num_frames"]
     S: Int64[T, "num_frames"]
 
-    class_labels: list[Any]
+    class_to_frames: dict[int, list[int]]
+    """
+    For each equivalence class index, a list of frame indices.
+    This is a redundant inverse representation of `Q`, which maps from frame index to class.
+    """
+
+    class_labels: list[Hashable]
     """
     For each equivalence class, a description of its content.
     """
@@ -197,6 +203,11 @@ class SpeechEquivalenceDataset:
 
         # If Q is set, then S should be set
         assert (self.Q == -1).logical_or(self.S != -1).all()
+
+        assert set(self.class_to_frames.keys()) == set(range(len(self.class_labels)))
+        # check consistency between class_to_frames and Q
+        for class_idx, frames in tqdm(self.class_to_frames.items(), desc="Checking consistency"):
+            assert (self.Q[frames] == class_idx).all()
 
     def __repr__(self):
         return f"SpeechEquivalenceDataset({self.name}, {self.num_classes} classes, {self.num_instances} instances)"
@@ -218,18 +229,6 @@ class SpeechEquivalenceDataset:
         lengths[self.S == -1] = -1
         return lengths
     
-    @cached_property
-    def class_to_frames(self):
-        chunksize = 100000
-        equiv_class_to_idxs = defaultdict(list)
-        for start in trange(0, self.Q.shape[0], chunksize, desc="Preparing equiv class mappings"):
-            matches = (self.Q[start:start + chunksize] == torch.arange(self.num_classes)[:, None]).nonzero().numpy()
-            for class_idx, frame_idxs in itertools.groupby(matches, key=lambda x: x[0]):
-                frame_idxs = start + np.array(list(frame_idxs))[:, 1]
-                equiv_class_to_idxs[class_idx].extend(frame_idxs.tolist())
-
-        return equiv_class_to_idxs
-    
     def drop_lengths(self, max_length: int) -> "SpeechEquivalenceDataset":
         """
         Drop all frames with length greater than `max_length`.
@@ -241,7 +240,11 @@ class SpeechEquivalenceDataset:
         new_S = self.S.clone()
         new_S[mask] = -1
 
-        return replace(self, Q=new_Q, S=new_S)
+        # update class_to_frames
+        new_class_to_frames = {class_idx: [frame_idx for frame_idx in frames if not mask[frame_idx]]
+                               for class_idx, frames in self.class_to_frames.items()}
+
+        return replace(self, Q=new_Q, S=new_S, class_to_frames=new_class_to_frames)
     
 
 def make_timit_equivalence_dataset(name: str,
@@ -325,12 +328,18 @@ def make_timit_equivalence_dataset(name: str,
 
     # Now run equivalence classing.
     Q = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
-    class_labels = list(frame_groups.keys())
+    class_labels = sorted(frame_groups.keys())
     class_label_to_idx = {class_key: idx for idx, class_key in enumerate(class_labels)}
     flat_idx_rev = {tuple(idx): i for i, idx in enumerate(hidden_states.flat_idxs)}
-    for class_key, group in frame_groups.items():
+    # Prepare a redundant representation, mapping from class idx to list of flat idxs.
+    class_idx_to_frames = {idx: [] for idx, class_key in enumerate(class_labels)}
+    for class_key, group in tqdm(frame_groups.items(), desc="Building forward lookup"):
         for idx, frame in group:
             Q[flat_idx_rev[idx, frame]] = class_label_to_idx[class_key]
+    for frame_idx in tqdm((Q != -1).nonzero(as_tuple=True)[0], desc="Building inverse lookup"):
+        class_key = class_labels[Q[frame_idx].item()]
+        class_idx = class_label_to_idx[class_key]
+        class_idx_to_frames[class_idx].append(frame_idx.item())
 
     # Compute start frames.
     S = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
@@ -388,6 +397,7 @@ def make_timit_equivalence_dataset(name: str,
     ret = SpeechEquivalenceDataset(name=name,
                                    Q=Q,
                                    S=S,
+                                   class_to_frames=class_idx_to_frames,
                                    class_labels=class_labels)
     if max_length is not None:
         ret = ret.drop_lengths(max_length)
