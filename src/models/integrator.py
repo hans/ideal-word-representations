@@ -246,10 +246,12 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                 self.compute_embeddings(neg, neg_length) if neg is not None else None
 
 
-def get_sequence(F, start_index, end_index, max_length):
+def get_sequence(F, start_index, end_index, max_length, layer=0):
+    assert F.ndim == 3  # num_frames * num_layers * hidden_size
+
     if end_index - start_index + 1 > max_length:
         start_index = end_index - max_length + 1
-    sequence = F[start_index:end_index + 1]
+    sequence = F[start_index:end_index + 1, layer]
 
     if not isinstance(sequence, torch.Tensor):
         sequence = torch.tensor(sequence)
@@ -263,17 +265,24 @@ def get_sequence(F, start_index, end_index, max_length):
     return sequence
 
 
-def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
+def iter_dataset(equiv_dataset_path: str,
                  hidden_states_path: str,
                  max_length: int,
                  num_examples: Optional[int] = None,
                  layer: Optional[int] = None,
                  select_idxs: Optional[list[int]] = None,
                  infinite=True) -> Iterator[dict]:
+    # Implementation note: because this function is invoked from the Datasets generator
+    # pipeline, we pass paths rather than objects so that the relevant inputs don't get
+    # needlessly re-serialized every time this function is used.
+    equiv_dataset = torch.load(equiv_dataset_path)
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
-    if layer is None and hidden_state_dataset.num_layers > 1:
-        raise ValueError("Must specify layer if there are multiple layers")
-    F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
+
+    if layer is None:
+        if hidden_state_dataset.num_layers > 1:
+            raise ValueError("Must specify layer if there are multiple layers")
+        layer = 0
+    F = hidden_state_dataset.states
 
     lengths = torch.minimum(equiv_dataset.lengths, torch.tensor(max_length))
     # TODO understand why we have zero-length examples
@@ -288,16 +297,20 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
         if num_examples is not None:
             non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
 
+    # Pre-compute positive example equivalence classes intersected with `select_idxs`
+    if select_idxs is None:
+        pos_equiv_frames = {class_idx: np.array(frames) for class_idx, frames in equiv_dataset.class_to_frames.items()}
+    else:
+        pos_equiv_frames = {class_idx: np.intersect1d(np.array(frames), select_idxs)
+                            for class_idx, frames in tqdm(equiv_dataset.class_to_frames.items(), desc="Pre-computing equivalence classes")}
+
     # infinite generation
     while True:
         for i in non_null_frames:
             if lengths[i] == -1:
                 continue
 
-            pos_indices = np.array(equiv_dataset.class_to_frames[equiv_dataset.Q[i].item()])
-            if select_idxs is not None:
-                pos_indices = np.intersect1d(pos_indices, select_idxs)
-            # neg_indices = equiv_class_to_complement_idxs[equiv_dataset.Q[i].item()]
+            pos_indices = pos_equiv_frames[equiv_dataset.Q[i].item()]
 
             if len(pos_indices) > 1:
                 pos_indices = pos_indices[pos_indices != i.item()]
@@ -305,8 +318,8 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
                 neg_idx = None  # random.choice(neg_indices)
 
                 # Extract sequences
-                example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length)
-                pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length)
+                example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length, layer=layer)
+                pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length, layer=layer)
                 neg_seq = None  # get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
 
                 # Sanity checks
@@ -339,6 +352,7 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
 
 
 def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                    equiv_dataset_path: str,
                     hidden_states_path: str,
                     max_length: int,
                     layer: Optional[int] = None,
@@ -362,9 +376,7 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
     test_idxs, train_idxs = all_idxs[:eval_num_samples], all_idxs[eval_num_samples:]
 
     dataset_kwargs = {
-        # TODO this triggers a re-pickling of the whole dataset ... consider passing a path/reference
-        "equiv_dataset": equiv_dataset,
-
+        "equiv_dataset_path": equiv_dataset_path,
         "hidden_states_path": hidden_states_path,
         "max_length": max_length,
         "layer": layer,
@@ -374,9 +386,10 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
     train_dataset = IterableDataset.from_generator(
         iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": train_idxs,
                                   "infinite": True})
-    test_dataset = Dataset.from_generator(
-        iter_dataset, gen_kwargs={**dataset_kwargs, "select_idxs": test_idxs,
-                                  "infinite": False})
+    test_dataset: Dataset = Dataset.from_generator(
+        iter_dataset, keep_in_memory=True,
+        gen_kwargs={**dataset_kwargs, "select_idxs": test_idxs,
+                    "infinite": False})
 
     return len(all_idxs), train_dataset, test_dataset
 

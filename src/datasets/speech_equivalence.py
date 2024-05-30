@@ -106,7 +106,7 @@ class SpeechHiddenStateDataset:
         assert self.states.ndim == 3
         assert len(self.flat_idxs) == self.states.shape[0]
 
-    def get_layer(self, layer: int) -> torch.Tensor:
+    def get_layer(self, layer: int) -> Float[T, "num_frames hidden_size"]:
         return torch.tensor(self.states[:, layer, :][()])
 
     def __repr__(self):

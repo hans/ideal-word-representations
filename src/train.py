@@ -31,6 +31,7 @@ def make_model_init(config: integrator.ContrastiveEmbeddingModelConfig, device="
 
 
 def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
+                        equiv_dataset_path: str,
                         hidden_states_path: str, **kwargs
                         ) -> tuple[int, datasets.IterableDataset, datasets.IterableDataset, int]:
     # Pick a max length that accommodates the majority of the samples,
@@ -40,7 +41,8 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
     num_examples, train_dataset, eval_dataset = integrator.prepare_dataset(
-        equiv_dataset, hidden_states_path, target_length, **kwargs)
+        equiv_dataset, equiv_dataset_path, hidden_states_path,
+        target_length, **kwargs)
 
     return num_examples, train_dataset, eval_dataset, target_length
 
@@ -62,6 +64,7 @@ def hyperparameter_objective(metrics: dict[str, float]) -> float:
 
 
 def train(config: DictConfig):
+    datasets.disable_caching()
     if config.device == "cuda":
         if not torch.cuda.is_available():
             L.error("CUDA is not available. Falling back to CPU.")
@@ -72,13 +75,13 @@ def train(config: DictConfig):
     hidden_states_path = Path(config.base_model.hidden_state_path).absolute()
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
 
-    with open(config.equivalence.path, "rb") as f:
-        equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
+    equiv_dataset_path = config.equivalence.path
+    equiv_dataset: SpeechEquivalenceDataset = torch.load(equiv_dataset_path)
 
     # Prepare negative-sampling dataset
     if config.trainer.mode in ["train", "hyperparameter_search"]:
         total_num_examples, train_dataset, eval_dataset, max_length = prepare_neg_dataset(
-            equiv_dataset, str(hidden_states_path))
+            equiv_dataset, equiv_dataset_path, str(hidden_states_path))
         
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = eval_dataset.with_format("torch")
