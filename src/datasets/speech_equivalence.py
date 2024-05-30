@@ -249,6 +249,7 @@ def make_timit_equivalence_dataset(name: str,
                                    hidden_states: SpeechHiddenStateDataset,
                                    equivalence_classer: str,
                                    minimum_frequency_percentile: float = 0.,
+                                   minimum_frequency_count: int = 0,
                                    max_length: Optional[int] = 100,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
@@ -304,14 +305,23 @@ def make_timit_equivalence_dataset(name: str,
 
     if minimum_frequency_percentile > 0:
         # Filter out low-frequency classes
-        min_count = np.percentile(np.array(group_counts.values()), minimum_frequency_percentile)
-        import ipdb; ipdb.set_trace()
+        min_count = np.percentile(np.array(list(group_counts.values())), minimum_frequency_percentile)
 
         len_before = len(frame_groups)
         frame_groups = {class_key: group for class_key, group in frame_groups.items() if group_counts[class_key] >= min_count}
         len_after = len(frame_groups)
         print(f"Filtered out {len_before - len_after} classes with fewer than {min_count} frames")
         print(f"Remaining classes: {len_after}")
+    
+    if minimum_frequency_count > 0:
+        if minimum_frequency_percentile > 0 and min_count >= minimum_frequency_count:
+            print("Skipping minimum frequency count filtering because minimum frequency percentile set a more stringent criterion")
+        else:
+            len_before = len(frame_groups)
+            frame_groups = {class_key: group for class_key, group in frame_groups.items() if group_counts[class_key] >= minimum_frequency_count}
+            len_after = len(frame_groups)
+            print(f"Filtered out {len_before - len_after} classes with fewer than {minimum_frequency_count} frames")
+            print(f"Remaining classes: {len_after}")
 
     # Now run equivalence classing.
     Q = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
@@ -329,7 +339,7 @@ def make_timit_equivalence_dataset(name: str,
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
             num_frames = flat_idx_end - flat_idx_offset
-            compression_ratio = num_frames / len(item["input_values"])
+            compression_ratio = hidden_states.compression_ratios[idx]
 
             for word in item["word_phonemic_detail"]:
                 if len(word) == 0:
@@ -344,7 +354,7 @@ def make_timit_equivalence_dataset(name: str,
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
             num_frames = flat_idx_end - flat_idx_offset
-            compression_ratio = num_frames / len(item["input_values"])
+            compression_ratio = hidden_states.compression_ratios[idx]
 
             for word in item["word_phonemic_detail"]:
                 for phone in word:
@@ -360,7 +370,7 @@ def make_timit_equivalence_dataset(name: str,
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
             num_frames = flat_idx_end - flat_idx_offset
-            compression_ratio = num_frames / len(item["input_values"])
+            compression_ratio = hidden_states.compression_ratios[idx]
 
             for word in item["word_phonemic_detail"]:
                 for phone in word:
