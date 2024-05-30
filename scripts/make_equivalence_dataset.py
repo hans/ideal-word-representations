@@ -25,7 +25,6 @@ def main(config: DictConfig):
     
     # pre-compute mapping from class idx to frames
     equiv_dataset.class_to_frames
-    print(equiv_dataset.__dict__.keys())
 
     with open(Path(HydraConfig.get().runtime.output_dir) / "equivalence.pkl", "wb") as f:
         torch.save(equiv_dataset, f)

@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from beartype import beartype
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -97,6 +97,10 @@ class SpeechHiddenStateDataset:
     # states: Float[T, "num_frames num_layers hidden_size"]
     states: h5py.Dataset
 
+    # ratio of num_frames to original audio num_samples. useful for 
+    # aligning frames with annotations in the original audio.
+    compression_ratios: list[float]
+
     # mapping from flattened frame index to (item index, frame index)
     flat_idxs: list[tuple[int, int]]
 
@@ -105,6 +109,9 @@ class SpeechHiddenStateDataset:
     def __post_init__(self):
         assert self.states.ndim == 3
         assert len(self.flat_idxs) == self.states.shape[0]
+        # each item has at least one frame; and we have a compression ratio stored
+        # for each item
+        assert set(np.unique(np.array(self.flat_idxs)[:, 0])) == set(np.arange(len(self.compression_ratios)))
 
     def get_layer(self, layer: int) -> Float[T, "num_frames hidden_size"]:
         return torch.tensor(self.states[:, layer, :][()])
@@ -117,6 +124,7 @@ class SpeechHiddenStateDataset:
         with h5py.File(path, "w") as f:
             f.attrs["model_name"] = self.model_name
             f.create_dataset("states", data=self.states.numpy())
+            f.create_dataset("compression_ratios", data=self.compression_ratios, dtype=np.float32)
             f.create_dataset("flat_idxs", data=self.flat_idxs, dtype=np.int32)
     
     @classmethod
@@ -124,10 +132,13 @@ class SpeechHiddenStateDataset:
         f = h5py.File(path, "r")
         model_name = f.attrs["model_name"]
         states = f["states"]  # NB not loading into memory
+        compression_ratios = f["compression_ratios"][:]
         flat_idxs = f["flat_idxs"][:]
 
-        return cls(model_name=model_name, states=states, flat_idxs=flat_idxs,
-                    _file_handle=f)
+        return cls(model_name=model_name, states=states,
+                   compression_ratios=compression_ratios,
+                   flat_idxs=flat_idxs,
+                   _file_handle=f)
 
     @property
     def num_frames(self) -> int:
@@ -250,13 +261,19 @@ def make_timit_equivalence_dataset(name: str,
     assert equivalence_classer in equivalence_classers
 
     frame_groups = defaultdict(list)
+    # count number of WORDS which contain instances of each group
+    # NB this under-counts phoneme instances. we only care about this for filtering
+    # the open-class units (e.g. words) so it's okay. (See usage below in
+    # `minimum_frequency_percentile` filtering.)
+    group_counts = Counter()
+
     frames_by_item = hidden_states.frames_by_item
 
     # Align with TIMIT annotations
     def process_item(item, idx):
-        # Now align and store frame metadata
-        num_frames = frames_by_item[idx][1] - frames_by_item[idx][0]
-        compression_ratio = num_frames / len(item["input_values"])
+        compression_ratio = hidden_states.compression_ratios[idx]
+        seen_groups = set()
+
         for i, word in enumerate(item["word_phonemic_detail"]):
             if len(word) == 0:
                 continue
@@ -278,16 +295,20 @@ def make_timit_equivalence_dataset(name: str,
                     class_label = equivalence_classers[equivalence_classer](word, word_str, j)
                     if class_label is not None:
                         frame_groups[class_label].append((idx, k))
+                        seen_groups.add(class_label)
+
+        for group in seen_groups:
+            group_counts[group] += 1
+
     dataset.map(process_item, with_indices=True, desc="Aligning metadata")
 
     if minimum_frequency_percentile > 0:
         # Filter out low-frequency classes
-        class_counts = {class_key: len(group) for class_key, group in frame_groups.items()}
-        class_counts = np.array(list(class_counts.values()))
-        min_count = np.percentile(class_counts, minimum_frequency_percentile)
+        min_count = np.percentile(np.array(group_counts.values()), minimum_frequency_percentile)
+        import ipdb; ipdb.set_trace()
 
         len_before = len(frame_groups)
-        frame_groups = {class_key: group for class_key, group in frame_groups.items() if len(group) >= min_count}
+        frame_groups = {class_key: group for class_key, group in frame_groups.items() if group_counts[class_key] >= min_count}
         len_after = len(frame_groups)
         print(f"Filtered out {len_before - len_after} classes with fewer than {min_count} frames")
         print(f"Remaining classes: {len_after}")

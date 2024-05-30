@@ -22,6 +22,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
                           batch_size=8) -> SpeechHiddenStateDataset:
     flat_idxs = []
     frame_states_list = []
+    compression_ratios = []
 
     def collate_batch(batch):
         batch = processor.pad(
@@ -49,6 +50,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
         for idx, num_frames_i, hidden_states_i in zip(idxs, frame_lengths, batch_hidden_states):
             flat_idxs.extend([(idx, j) for j in range(num_frames_i)])
             frame_states_list.append(hidden_states_i[:num_frames_i])
+        compression_ratios.extend((frame_lengths / input_lengths).numpy())
 
     dataset.map(extract_representations,
                 batched=True, batch_size=batch_size,
@@ -59,7 +61,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
     frame_states = frame_states.unsqueeze(1).contiguous()
     # frame_states: total_num_frames * 1 * hidden_size
 
-    return SpeechHiddenStateDataset(model.name_or_path, frame_states, flat_idxs)
+    return SpeechHiddenStateDataset(model.name_or_path, frame_states, compression_ratios, flat_idxs)
 
 
 @hydra.main(config_path="../conf", config_name="config.yaml", version_base="1.2")

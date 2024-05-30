@@ -259,7 +259,7 @@ def get_sequence(F, start_index, end_index, max_length, layer=0):
     # Pad on right if necessary
     if len(sequence) < max_length:
         pad_size = max_length - len(sequence)
-        padding = torch.zeros(pad_size, F.shape[1]).to(F)
+        padding = torch.zeros(pad_size, F.shape[2])
         sequence = torch.cat((sequence, padding), dim=0)
     
     return sequence
@@ -278,6 +278,14 @@ def iter_dataset(equiv_dataset_path: str,
     equiv_dataset = torch.load(equiv_dataset_path)
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
 
+    # # DEV
+    # equiv_dataset.Q = equiv_dataset.Q[:10000]
+    # if select_idxs is not None:
+    #     select_idxs = select_idxs[select_idxs < equiv_dataset.Q.shape[0]]
+    # equiv_dataset.Q = torch.clamp(equiv_dataset.Q, min=-1, max=5)
+    # class_to_frames = {cl: [f for f in equiv_dataset.class_to_frames[cl] if f < equiv_dataset.Q.shape[0]]
+    #                    for cl in range(6)}
+
     if layer is None:
         if hidden_state_dataset.num_layers > 1:
             raise ValueError("Must specify layer if there are multiple layers")
@@ -292,17 +300,17 @@ def iter_dataset(equiv_dataset_path: str,
         assert (equiv_dataset.Q[select_idxs] != -1).all()
         non_null_frames = torch.tensor(select_idxs)
         select_idxs = np.array(select_idxs)
+
+        # update Q on this instance, and re-compute equivalence classes
+        equiv_dataset.Q[np.setdiff1d(np.arange(len(equiv_dataset.Q)), select_idxs)] = -1
+
+        # DEV
+        del equiv_dataset.class_to_frames
+        equiv_dataset.class_to_frames
     else:
         non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
         if num_examples is not None:
             non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
-
-    # Pre-compute positive example equivalence classes intersected with `select_idxs`
-    if select_idxs is None:
-        pos_equiv_frames = {class_idx: np.array(frames) for class_idx, frames in equiv_dataset.class_to_frames.items()}
-    else:
-        pos_equiv_frames = {class_idx: np.intersect1d(np.array(frames), select_idxs)
-                            for class_idx, frames in tqdm(equiv_dataset.class_to_frames.items(), desc="Pre-computing equivalence classes")}
 
     # infinite generation
     while True:
@@ -310,11 +318,14 @@ def iter_dataset(equiv_dataset_path: str,
             if lengths[i] == -1:
                 continue
 
-            pos_indices = pos_equiv_frames[equiv_dataset.Q[i].item()]
+            pos_indices = equiv_dataset.class_to_frames[equiv_dataset.Q[i].item()]  # class_to_frames[equiv_dataset.Q[i].item()]
 
             if len(pos_indices) > 1:
-                pos_indices = pos_indices[pos_indices != i.item()]
-                pos_idx = random.choice(pos_indices)
+                # get non-identical positive example
+                pos_idx = i.item()
+                while pos_idx == i.item():
+                    pos_idx = random.choice(pos_indices)
+
                 neg_idx = None  # random.choice(neg_indices)
 
                 # Extract sequences
