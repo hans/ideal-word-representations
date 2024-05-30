@@ -69,8 +69,8 @@ def train(config: DictConfig):
     dataset = datasets.load_from_disk(config.dataset.processed_data_dir)
     assert not isinstance(dataset, datasets.DatasetDict), "should be a Dataset, not be a DatasetDict"
 
-    hidden_states_path = config.base_model.hidden_state_path
-    hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
+    hidden_states_path = Path(config.base_model.hidden_state_path).absolute()
+    hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
 
     with open(config.equivalence.path, "rb") as f:
         equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
@@ -78,7 +78,7 @@ def train(config: DictConfig):
     # Prepare negative-sampling dataset
     if config.trainer.mode in ["train", "hyperparameter_search"]:
         total_num_examples, train_dataset, eval_dataset, max_length = prepare_neg_dataset(
-            equiv_dataset, hidden_states_path)
+            equiv_dataset, str(hidden_states_path))
         
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = eval_dataset.with_format("torch")

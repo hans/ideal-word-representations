@@ -9,7 +9,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import call
 from omegaconf import DictConfig
 
-from src.datasets.speech_equivalence import SpeechHiddenStateDataset
+from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
 
 @hydra.main(config_path="../conf", config_name="config.yaml", version_base="1.2")
@@ -19,9 +19,13 @@ def main(config: DictConfig):
     hidden_state_path = config.base_model.hidden_state_path
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
 
-    equiv_dataset = call(config.equivalence, _partial_=True)(
-                         dataset=dataset,
-                         hidden_states=hidden_state_dataset)
+    equiv_dataset: SpeechEquivalenceDataset = call(config.equivalence, _partial_=True)(
+        dataset=dataset,
+        hidden_states=hidden_state_dataset)
+    
+    # pre-compute mapping from class idx to frames
+    equiv_dataset.class_to_frames
+    print(equiv_dataset.__dict__.keys())
 
     with open(Path(HydraConfig.get().runtime.output_dir) / "equivalence.pkl", "wb") as f:
         torch.save(equiv_dataset, f)

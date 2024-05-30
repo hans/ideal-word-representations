@@ -2,6 +2,7 @@ from collections import defaultdict
 from beartype import beartype
 from dataclasses import dataclass, replace
 from functools import cached_property
+import itertools
 from pathlib import Path
 from typing import TypeAlias, Callable, Any, Hashable, Optional, Union
 
@@ -11,6 +12,7 @@ from jaxtyping import Float, Int64
 import numpy as np
 import torch
 from torch import Tensor as T
+from tqdm.auto import trange, tqdm
 
 
 # defines the critical logic by which frames are equivalence-classed.
@@ -204,6 +206,18 @@ class SpeechEquivalenceDataset:
         lengths = torch.arange(self.S.shape[0]) - self.S
         lengths[self.S == -1] = -1
         return lengths
+    
+    @cached_property
+    def class_to_frames(self):
+        chunksize = 100000
+        equiv_class_to_idxs = defaultdict(list)
+        for start in trange(0, self.Q.shape[0], chunksize, desc="Preparing equiv class mappings"):
+            matches = (self.Q[start:start + chunksize] == torch.arange(self.num_classes)[:, None]).nonzero().numpy()
+            for class_idx, frame_idxs in itertools.groupby(matches, key=lambda x: x[0]):
+                frame_idxs = start + np.array(list(frame_idxs))[:, 1]
+                equiv_class_to_idxs[class_idx].extend(frame_idxs.tolist())
+
+        return equiv_class_to_idxs
     
     def drop_lengths(self, max_length: int) -> "SpeechEquivalenceDataset":
         """

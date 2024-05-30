@@ -1,4 +1,6 @@
+from collections import defaultdict
 from dataclasses import dataclass
+import itertools
 import logging
 from pathlib import Path
 import random
@@ -64,7 +66,11 @@ class ContrastiveEmbeddingObjective(nn.Module):
                 reduction="mean",
                 embeddings_class=None):
         pos_dist = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
-        neg_dist = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
+
+        if neg_embeddings is None:
+            neg_dist = torch.tensor(0.).to(embeddings)
+        else:
+            neg_dist = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
 
         pos_loss = -torch.log(torch.exp(pos_dist / self.tau))
         neg_loss = -torch.log(torch.exp(-neg_dist / self.tau))
@@ -186,7 +192,8 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
     def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
         return self.config.is_compatible_with(dataset)
 
-    def forward(self, example, example_length, pos, pos_length, neg, neg_length,
+    def forward(self, example, example_length, pos, pos_length,
+                neg=None, neg_length=None,
                 loss_reduction="mean",
                 return_loss=True, return_embeddings=True,
                 in_batch_soft_negatives=None,
@@ -196,6 +203,9 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         
         in_batch_soft_negatives = in_batch_soft_negatives if in_batch_soft_negatives is not None \
             else self.config.in_batch_soft_negatives
+        
+        if neg is None and not in_batch_soft_negatives:
+            raise ValueError("Must provide negative examples if not using in_batch_soft_negatives")
 
         loss_fn = ContrastiveEmbeddingObjective(
             tau=self.config.tau,
@@ -229,10 +239,11 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
             embeddings = torch.gather(embeddings, 1, (example_length - 1).reshape(-1, 1, 1).expand(-1, 1, embeddings.shape[-1])).squeeze(1)
             return embeddings
         
-    def compute_batch_embeddings(self, example, example_length, pos, pos_length, neg, neg_length):
+    def compute_batch_embeddings(self, example, example_length, pos, pos_length,
+                                 neg=None, neg_length=None):
         return self.compute_embeddings(example, example_length), \
                 self.compute_embeddings(pos, pos_length), \
-                self.compute_embeddings(neg, neg_length)
+                self.compute_embeddings(neg, neg_length) if neg is not None else None
 
 
 def get_sequence(F, start_index, end_index, max_length):
@@ -263,7 +274,7 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
     if layer is None and hidden_state_dataset.num_layers > 1:
         raise ValueError("Must specify layer if there are multiple layers")
     F = hidden_state_dataset.get_layer(layer if layer is not None else 0)
-    
+
     lengths = torch.minimum(equiv_dataset.lengths, torch.tensor(max_length))
     # TODO understand why we have zero-length examples
     lengths[lengths == 0] = 1
@@ -271,17 +282,11 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
     if select_idxs is not None:
         assert (equiv_dataset.Q[select_idxs] != -1).all()
         non_null_frames = torch.tensor(select_idxs)
+        select_idxs = np.array(select_idxs)
     else:
         non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
         if num_examples is not None:
             non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
-
-    # Pre-compute mapping from equivalence class to frame indices
-    equiv_class_to_idxs = {}
-    equiv_class_to_complement_idxs = {}
-    for idx in range(equiv_dataset.num_classes):
-        equiv_class_to_idxs[idx] = (equiv_dataset.Q == idx).nonzero(as_tuple=True)[0]
-        equiv_class_to_complement_idxs[idx] = ((equiv_dataset.Q != -1) & (equiv_dataset.Q != idx)).nonzero(as_tuple=True)[0]
 
     # infinite generation
     while True:
@@ -289,26 +294,28 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
             if lengths[i] == -1:
                 continue
 
-            pos_indices = equiv_class_to_idxs[equiv_dataset.Q[i].item()]
-            neg_indices = equiv_class_to_complement_idxs[equiv_dataset.Q[i].item()]
+            pos_indices = np.array(equiv_dataset.class_to_frames[equiv_dataset.Q[i].item()])
+            if select_idxs is not None:
+                pos_indices = np.intersect1d(pos_indices, select_idxs)
+            # neg_indices = equiv_class_to_complement_idxs[equiv_dataset.Q[i].item()]
 
-            if len(pos_indices) > 1 and len(neg_indices) > 0:
-                pos_indices = pos_indices[pos_indices != i]
+            if len(pos_indices) > 1:
+                pos_indices = pos_indices[pos_indices != i.item()]
                 pos_idx = random.choice(pos_indices)
-                neg_idx = random.choice(neg_indices)
+                neg_idx = None  # random.choice(neg_indices)
 
                 # Extract sequences
                 example_seq = get_sequence(F, equiv_dataset.S[i], i, max_length)
                 pos_seq = get_sequence(F, equiv_dataset.S[pos_idx], pos_idx, max_length)
-                neg_seq = get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
+                neg_seq = None  # get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
 
-                # Sanity chcks
+                # Sanity checks
                 assert lengths[i] > 0
                 assert lengths[pos_idx] > 0
-                assert lengths[neg_idx] > 0
+                # assert lengths[neg_idx] > 0
                 assert equiv_dataset.Q[i] != -1
                 assert equiv_dataset.Q[pos_idx] != -1
-                assert equiv_dataset.Q[neg_idx] != -1
+                # assert equiv_dataset.Q[neg_idx] != -1
 
                 yield {
                     "example": example_seq,
@@ -323,8 +330,8 @@ def iter_dataset(equiv_dataset: SpeechEquivalenceDataset,
 
                     "neg": neg_seq,
                     "neg_idx": neg_idx,
-                    "neg_class": equiv_dataset.Q[neg_idx],
-                    "neg_length": lengths[neg_idx],
+                    "neg_class": None,  # equiv_dataset.Q[neg_idx],
+                    "neg_length": None,  # lengths[neg_idx],
                 }
 
         if not infinite:
@@ -355,7 +362,9 @@ def prepare_dataset(equiv_dataset: SpeechEquivalenceDataset,
     test_idxs, train_idxs = all_idxs[:eval_num_samples], all_idxs[eval_num_samples:]
 
     dataset_kwargs = {
+        # TODO this triggers a re-pickling of the whole dataset ... consider passing a path/reference
         "equiv_dataset": equiv_dataset,
+
         "hidden_states_path": hidden_states_path,
         "max_length": max_length,
         "layer": layer,
