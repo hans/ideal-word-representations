@@ -64,7 +64,8 @@ class ContrastiveEmbeddingObjective(nn.Module):
 
     def forward(self, embeddings, pos_embeddings, neg_embeddings,
                 reduction="mean",
-                embeddings_class=None):
+                embeddings_class=None,
+                return_soft_negatives=False):
         pos_dist = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
 
         if neg_embeddings is None:
@@ -130,6 +131,8 @@ class ContrastiveEmbeddingObjective(nn.Module):
 
             train_loss += regularization_loss
 
+        if return_soft_negatives:
+            return train_loss, (soft_negatives, mask, pairwise_cosine_sim)
         return train_loss
 
 
@@ -140,6 +143,10 @@ class ContrastiveEmbeddingModelOutput(ModelOutput):
     embeddings: Optional[torch.Tensor] = None
     embeddings_hard_positive: Optional[torch.Tensor] = None
     embeddings_hard_negative: Optional[torch.Tensor] = None
+
+    embeddings_soft_negative: Optional[torch.Tensor] = None
+    soft_negative_mask: Optional[torch.Tensor] = None
+    soft_negative_pairwise_cosine_sim: Optional[torch.Tensor] = None
 
 
 @dataclass
@@ -211,9 +218,16 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
             tau=self.config.tau,
             batch_soft_negatives=in_batch_soft_negatives,
             regularization=self.config.regularization)
-        loss = loss_fn(embeddings, pos_embeddings, neg_embeddings,
-                       reduction=loss_reduction,
-                       embeddings_class=kwargs.get("example_idx"))
+        ret = loss_fn(embeddings, pos_embeddings, neg_embeddings,
+                      reduction=loss_reduction,
+                      embeddings_class=kwargs.get("example_idx"),
+                      return_soft_negatives=in_batch_soft_negatives)
+        
+        if in_batch_soft_negatives:
+            loss = ret[0]
+            soft_neg_embeddings, mask, pairwise_cosine_sim = ret[1]
+        else:
+            loss = ret
 
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
@@ -222,7 +236,10 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                 loss=loss,
                 embeddings=embeddings,
                 embeddings_hard_positive=pos_embeddings,
-                embeddings_hard_negative=neg_embeddings
+                embeddings_hard_negative=neg_embeddings,
+                embeddings_soft_negative=soft_neg_embeddings,
+                soft_negative_mask=mask,
+                soft_negative_pairwise_cosine_sim=pairwise_cosine_sim,
             )
 
     def compute_embeddings(self, example, example_length, return_all_states=False):
@@ -247,11 +264,13 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
 
 
 def get_sequence(F, start_index, end_index, max_length, layer=0):
-    assert F.ndim == 3  # num_frames * num_layers * hidden_size
-
     if end_index - start_index + 1 > max_length:
         start_index = end_index - max_length + 1
-    sequence = F[start_index:end_index + 1, layer]
+    sequence = F[start_index:end_index + 1]
+
+    if F.ndim == 3:
+        # index into layer dimension
+        sequence = sequence[:, layer]
 
     if not isinstance(sequence, torch.Tensor):
         sequence = torch.tensor(sequence)
@@ -301,12 +320,8 @@ def iter_dataset(equiv_dataset_path: str,
         non_null_frames = torch.tensor(select_idxs)
         select_idxs = np.array(select_idxs)
 
-        # update Q on this instance, and re-compute equivalence classes
-        equiv_dataset.Q[np.setdiff1d(np.arange(len(equiv_dataset.Q)), select_idxs)] = -1
-
-        # DEV
-        del equiv_dataset.class_to_frames
-        equiv_dataset.class_to_frames
+        with equiv_dataset.modify_Q_ctx():
+            equiv_dataset.Q[np.setdiff1d(np.arange(len(equiv_dataset.Q)), select_idxs)] = -1
     else:
         non_null_frames = (equiv_dataset.Q != -1).nonzero(as_tuple=True)[0]
         if num_examples is not None:
@@ -499,15 +514,34 @@ def compute_embedding_axis_correlation(embeddings: np.ndarray):
 
 
 def compute_metrics(p: EvalPrediction):
-    assert len(p.predictions) == 3
-    embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions
+    hard_negative_embeddings, soft_negative_embeddings = None, None
+    soft_negative_distances = None
+    if len(p.predictions) == 3:
+        # hard negatives, no soft negatives
+        embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions
+    elif len(p.predictions) == 5:
+        # soft negatives, no hard negatives
+        embeddings, hard_positive_embeddings = p.predictions[:2]
+        soft_negative_embeddings, _, soft_negative_distances = p.predictions[2:]
+    elif len(p.predictions) == 6:
+        # hard and soft negatives
+        embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions[:3]
+        soft_negative_embeddings, _, soft_negative_distances = p.predictions[3:]
 
     assert isinstance(p.label_ids, np.ndarray)
     example_classes = p.label_ids
     assert embeddings.shape[0] == example_classes.shape[0]
 
+    eval_soft_loss, eval_hard_loss = None, None
+    if soft_negative_distances is not None:
+        eval_soft_loss = -np.log(np.exp(-soft_negative_distances / 0.1)).mean()
+    if hard_negative_embeddings is not None:
+        eval_hard_loss = compute_embedding_loss(embeddings, hard_positive_embeddings, hard_negative_embeddings)
+    assert eval_hard_loss is not None or eval_soft_loss is not None
+
     return {
-        "eval_loss": compute_embedding_loss(embeddings, hard_positive_embeddings, hard_negative_embeddings),
+        "eval_loss": eval_hard_loss if eval_hard_loss is not None else eval_soft_loss,
+        "eval_soft_loss": eval_soft_loss,
         "eval_embedding_norm": np.linalg.norm(embeddings, ord=2, axis=1).mean(),
         "eval_embedding_alignment": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="euclidean"),
         "eval_embedding_alignment_cosine": compute_embedding_alignment(embeddings, hard_positive_embeddings, metric="cosine"),

@@ -22,9 +22,6 @@ def main(config: DictConfig):
     equiv_dataset: SpeechEquivalenceDataset = call(config.equivalence, _partial_=True)(
         dataset=dataset,
         hidden_states=hidden_state_dataset)
-    
-    # pre-compute mapping from class idx to frames
-    equiv_dataset.class_to_frames
 
     with open(Path(HydraConfig.get().runtime.output_dir) / "equivalence.pkl", "wb") as f:
         torch.save(equiv_dataset, f)
