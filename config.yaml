@@ -7,106 +7,96 @@ datasets:
 
 models:
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_3-weightdecay0.01
     equivalence: phoneme_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: syllable_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_3-weightdecay0.01
     equivalence: next_phoneme_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: word_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: word_broad_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: biphone_recon_10frames
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: biphone_pred_10frames
 
-  # aniso outcomes
-  - base_model: w2v2_6
-    dataset: timit
-    model: rnn_8-aniso2
-    equivalence: word_broad_10frames
   - base_model: w2v2_8
-    dataset: timit
-    model: rnn_8-aniso2
-    equivalence: word_broad_10frames
-
-  - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_3-weightdecay0.01
     equivalence: phoneme_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: syllable_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_3-weightdecay0.01
     equivalence: next_phoneme_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: word_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: word_broad_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: biphone_recon_10frames
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: rnn_8-weightdecay0.01
     equivalence: biphone_pred_10frames
 
   # random LSTM models
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomrnn_8
     equivalence: random
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomrnn_32
     equivalence: random
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomrnn_8
     equivalence: random
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomrnn_32
     equivalence: random
 
   # random feedforward models
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomff_8
     equivalence: random
   - base_model: w2v2_6
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomff_32
     equivalence: random
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomff_8
     equivalence: random
   - base_model: w2v2_8
-    dataset: timit
+    dataset: timit-no_repeats
     model: randomff_32
     equivalence: random
 
@@ -148,6 +138,36 @@ encoding:
       blocks:
         - B1
 
+    # remaining Barakeet subjects
+    - subject: EC248
+      data_source: fomo
+      blocks:
+        - B1
+    - subject: EC243
+      blocks:
+        - B1
+    # todo not available
+    # - subject: EC279
+    #   blocks:
+    #     - B1
+    - subject: EC250
+      blocks:
+        - B1
+    # missing BilingVowel TDT elecs
+    # - subject: EC270
+    #   blocks:
+    #     - B1
+    - subject: EC278
+      blocks:
+        - B27
+      fit_channels:
+        start: 0
+        end: 168
+    # todo not available
+    # - subject: EC253
+    #   blocks:
+    #     - B1
+
   model_comparisons:
     - model2: phoneme
       model1: baseline
@@ -161,42 +181,11 @@ encoding:
       model1: baseline
     - model2: random8
       model1: baseline
-    # - model2: word_broad
-    #   model1: baseline
-
-    # - model2: phoneme-w2v2_8
-    #   model1: baseline
-    # - model2: next_phoneme-w2v2_8
-    #   model1: baseline
-    # - model2: biphone_recon-w2v2_8
-    #   model1: baseline
-    # - model2: biphone_pred-w2v2_8
-    #   model1: baseline
-    # - model2: syllable-w2v2_8
-    #   model1: baseline
-    # - model2: random8-w2v2_8
-    #   model1: baseline
-    # - model2: word_broad-w2v2_8
-    #   model1: baseline
-
-    # - model2: word_broad-aniso1
-    #   model1: baseline
-    # - model2: word_broad-aniso2
-    #   model1: baseline
-    # - model2: word_broad-aniso3
-    #   model1: baseline
-
-    # - model2: word_broad-aniso1-w2v2_8
-    #   model1: baseline
     - model2: word_broad-aniso2-w2v2_8
       model1: baseline
-    # - model2: word_broad-aniso3-w2v2_8
-    #   model1: baseline
 
-    # - model2: word_broad-aniso2-w2v2_8-meanlast5
-    #   model1: baseline
-    # - model2: word_broad-aniso3-w2v2_8-meanlast5
-    #   model1: baseline
+    - model2: word_broad-aniso2-w2v2_8
+      model1: baseline_aud
 
   permutation_tests:
     units:
