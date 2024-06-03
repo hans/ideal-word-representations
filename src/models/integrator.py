@@ -278,7 +278,7 @@ def get_sequence(F, start_index, end_index, max_length, layer=0):
     # Pad on right if necessary
     if len(sequence) < max_length:
         pad_size = max_length - len(sequence)
-        padding = torch.zeros(pad_size, F.shape[2])
+        padding = torch.zeros(pad_size, F.shape[-1]).to(sequence)
         sequence = torch.cat((sequence, padding), dim=0)
     
     return sequence

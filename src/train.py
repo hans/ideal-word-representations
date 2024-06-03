@@ -41,7 +41,8 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
     num_examples, train_dataset, eval_dataset = integrator.prepare_dataset(
-        equiv_dataset, equiv_dataset_path, hidden_states_path,
+        equiv_dataset, str(Path(equiv_dataset_path).resolve()),
+        str(Path(hidden_states_path).resolve()),
         target_length, **kwargs)
 
     return num_examples, train_dataset, eval_dataset, target_length
@@ -142,6 +143,7 @@ def train(config: DictConfig):
             n_trials=hparam_config.n_trials,
             hp_space=hyperparameter_space,
             compute_objective=hyperparameter_objective,
+            resources_per_trial={"gpu": 0.45, "cpu": 1},
             scheduler=instantiate(hparam_config.scheduler,
                                   mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
         )
