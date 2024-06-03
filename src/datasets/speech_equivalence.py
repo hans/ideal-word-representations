@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from beartype import beartype
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -228,6 +229,22 @@ class SpeechEquivalenceDataset:
         lengths = torch.arange(self.S.shape[0]) - self.S
         lengths[self.S == -1] = -1
         return lengths
+
+    @contextmanager
+    def modify_Q_ctx(self):
+        """
+        Use this context manager if you want to modify Q; auxiliary data structures
+        will be updated accordingly afterwards.
+        """
+        yield
+        self._recompute_class_to_frames()
+
+    def _recompute_class_to_frames(self):
+        class_idx_to_frames = {idx: [] for idx, class_key in enumerate(self.class_labels)}
+        for frame_idx in tqdm((self.Q != -1).nonzero(as_tuple=True)[0], desc="Building inverse lookup"):
+            class_idx = int(self.Q[frame_idx].item())
+            class_idx_to_frames[class_idx].append(frame_idx.item())
+        self.class_to_frames = class_idx_to_frames
     
     def drop_lengths(self, max_length: int) -> "SpeechEquivalenceDataset":
         """
