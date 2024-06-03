@@ -319,6 +319,12 @@ rule extract_embeddings:
         """)
 
 
+rule extract_all_embeddings:
+    input:
+        expand("outputs/model_embeddings/{model_spec}/embeddings.npy",
+                model_spec=MODEL_SPEC_LIST)
+
+
 rule compute_state_spaces:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
