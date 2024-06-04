@@ -489,7 +489,8 @@ def make_encoder_data_spec(include_subjects=None):
             raise ValueError(f"No data for subjects {include_subjects}")
 
     # Now expand by block
-    data_spec = [{"subject": d["subject"], "block": block}
+    data_spec = [{"block": block,
+                  **{k: v for k, v in d.items() if k != "blocks"}}
                  for d in data_spec
                  for block in (d["blocks"] if d["blocks"] is not None else [None])]
 
