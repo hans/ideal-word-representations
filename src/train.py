@@ -143,7 +143,7 @@ def train(config: DictConfig):
             n_trials=hparam_config.n_trials,
             hp_space=hyperparameter_space,
             compute_objective=hyperparameter_objective,
-            resources_per_trial={"gpu": 0.45, "cpu": 1},
+            resources_per_trial={"gpu": 1/4., "cpu": 1},
             scheduler=instantiate(hparam_config.scheduler,
                                   mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
         )
