@@ -8,3 +8,7 @@ paths:
   data_path: /userdata/ilinabg/data
   info_path: /userdata/jgauthier/ilina_timit/speech_analysis
   out_file_glob: "HilbAA_70to150_8band*out_resp_log.mat"
+
+  # new FoMo data store
+  task_database_path: /data_store1/human/fomo/task_info.csv
+  ecog_path: /data_store1/human/fomo/preprocessed_data
