@@ -11,7 +11,6 @@ from mne.decoding import ReceptiveField
 import numpy as np
 from omegaconf import DictConfig
 import pandas as pd
-import polars as pl
 from scipy.io import loadmat
 import torch
 from tqdm.auto import tqdm
@@ -23,6 +22,10 @@ from src.datasets.speech_equivalence import SpeechEquivalenceDataset, SpeechHidd
 # processed struct from matlab pipeline
 OutFile: TypeAlias = list[dict[str, np.ndarray]]
 OutFileWithAnnotations: TypeAlias = list[dict[str, np.ndarray]]
+"""
+has fields `resp` along with feature ndarrays. first axis is
+feature/channel axis; second axis is time axis
+"""
 
 
 L = logging.getLogger(__name__)
@@ -232,8 +235,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
                          zscore=True,
                          drop_outliers=20.,
                          return_df=False,
-                         return_pl=False,
-                         ) -> Union[tuple[np.ndarray, list[dict]], pd.DataFrame, pl.DataFrame]:
+                         ) -> Union[tuple[np.ndarray, list[dict]], pd.DataFrame]:
     """
     Args:
         aligned_dataset: AlignedECoGDataset
@@ -380,23 +382,6 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         epoch_df = pd.merge(epoch_df, pd.DataFrame(epoch_info), on="epoch_idx",
                             how="left", validate="many_to_one")
         epoch_df["epoch_duration_secs"] = epoch_df.epoch_duration_samples / aligned_dataset.ecog_sfreq
-
-        return epoch_df
-    elif return_pl:
-        if len(epochs) == 0:
-            return pl.DataFrame()
-
-        epoch_df = pl.concat([
-                pl.from_numpy(ei, schema=list(map(str, np.arange(ei.shape[1]))))
-                    .with_columns(electrode_idx=np.arange(epochs[0].shape[0]) if subset_electrodes is None else subset_electrodes,
-                                  epoch_idx=pl.lit(i).cast(pl.Int64))
-                for i, ei in enumerate(epochs)]) \
-            .melt(id_vars=["epoch_idx", "electrode_idx"], variable_name="epoch_sample", value_name="value") \
-            .with_columns(epoch_sample=pl.col("epoch_sample").cast(pl.Int64)) \
-            .join(pl.DataFrame(epoch_info).with_columns(epoch_idx=pl.col("epoch_idx").cast(pl.Int64)),
-                  on="epoch_idx", how="left") \
-            .with_columns(epoch_duration_secs=pl.col("epoch_duration_samples") / aligned_dataset.ecog_sfreq,
-                          epoch_time=(pl.col("epoch_sample") + epoch_window[0]) / aligned_dataset.ecog_sfreq)
 
         return epoch_df
 
