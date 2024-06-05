@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+import sys
 from typing import cast, Optional, Union
 
 import mat73
@@ -11,7 +12,8 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import KFold, GridSearchCV
 from tqdm.auto import tqdm
 
-from src.encoding.ecog import TemporalReceptiveField, OutFile, OutFileWithAnnotations, ContrastiveModelSnapshot, AlignedECoGDataset
+from src.encoding.ecog import TemporalReceptiveField, OutFile, OutFileWithAnnotations, \
+    ContrastiveModelSnapshot, AlignedECoGDataset, get_electrode_df
 
 
 L = logging.getLogger(__name__)
@@ -40,7 +42,119 @@ def load_out_file(path) -> dict[str, OutFile]:
         return {"out": ret}
 
 
+def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileWithAnnotations:
+    data_dir = Path(config.corpus.paths.ecog_path) / data_spec.subject
+
+    # prepare list of grid electrode indices
+    electrode_df = get_electrode_df(config, data_spec.subject)
+    keep_elecs = electrode_df[electrode_df.type == "grid"]
+    # grid electrodes should start at 0 and be contiguous
+    keep_elec_idxs = keep_elecs.index.get_level_values("electrode_idx").tolist()
+    assert keep_elec_idxs == list(range(keep_elecs.shape[0]))
+
+    from data_utils import data_loader
+    patient = data_loader.nfm_patient(data_spec.subject)
+    task_event_dfs, block_ecog_activity = patient.load_task_ecog(
+        "TIMIT", "trial", zscore=False, include_task_levels=["trial"])
+
+    # sanity checks
+    assert len(block_ecog_activity) == len(task_event_dfs)
+    for block_ecog, task_event_df in zip(block_ecog_activity, task_event_dfs):
+        assert len(block_ecog) == len(task_event_df)
+
+    # compute average HGA over 8 bands; subset grid electrodes
+    keep_bands = [29, 30, 31, 32, 33, 34, 35, 36]
+    all_trials = [[trial[keep_bands][:, keep_elec_idxs].mean(axis=0) for trial in block_ecog]
+                  for block_ecog in block_ecog_activity]
+    
+    # prepare sentence annotations
+    strffeat = loadmat(f"{config.corpus.paths.info_path}/out_sentence_details_timit_all_loudness.mat",
+                       simplify_cells=True)['sentdet']
+    strffeat = {x["name"]: x for x in strffeat}
+
+    def get_trial_annotations(trial_name):
+        trial = strffeat[trial_name]
+        ret = {}
+
+        # adding f0 to out struct, should be added to loudness all
+        # before adddetails_to_out
+        soundir='neural_preprocessing/';
+        pitch_file = Path(config.corpus.paths.info_path).parent / soundir / "TimitSounds" / f"{trial_name}_pitch_int.txt"
+
+        # Drop first and last rows
+        pitch_df = pd.read_csv(pitch_file, sep='\t', header=None, na_values=["--undefined--"]) \
+            .iloc[1:-1][3].astype(float).fillna(0.)
+        # Pad with zeros by referencing stress data
+        before_pad = int(np.floor((len(trial["stress"]) - len(pitch_df)) / 2))
+        after_pad = int(np.ceil((len(trial["stress"]) - len(pitch_df)) / 2))
+        trial["f0"] = np.pad(pitch_df, (before_pad, after_pad))[None, :]
+
+        ####
+
+        ret["onset"] = trial["onsOff"][0]
+        ret["offset"] = trial["onsOff"][1]
+
+        ret["phnfeatConsOnset"] = trial["phnfeatonset"][[0, 1, 2, 7, 8, 10]]
+        
+        ret["maxDtL"] = trial["loudnessall"][5]
+
+        # auditory and spectral features
+        ret["aud"] = trial["aud"][:80]
+        ret["F0"] = trial["f0"][0]
+        ret["formantMedOnset"] = trial["frmMedOns"][:4]
+
+        # metadata
+        metadata = {
+            "befaft": trial["befaft"],
+            "dataf": trial["dataf"],
+            "soundf": trial["soundf"],
+        }
+
+        ret = {key: value[None, :] if value.ndim == 1 else value
+            for key, value in ret.items()}
+        return ret, metadata
+
+    all_trial_dicts = []
+    for block_event_df, block_ecog in zip(tqdm(task_event_dfs, unit="block", desc="Preparing ECoG and stimulus annotations"),
+                                          all_trials):
+        trial_df = block_event_df[(block_event_df.level == "trial")]
+        for trial_idx_in_block, (trial_idx, trial_row) in enumerate(trial_df.iterrows()):
+            trial_name = trial_row.stimulus_name
+            trial_ecog = block_ecog[trial_idx_in_block]
+            print(trial_ecog.shape)
+
+            annots, metadata = get_trial_annotations(trial_name)
+
+            pad_left, pad_right = metadata["befaft"] if len(metadata["befaft"]) == 2 else (0.5, 0.5)
+            sfreq = metadata["dataf"] or 100
+
+            all_trial_dicts.append({
+                "name": trial_name,
+                "resp": trial_ecog,
+                "befaft": (pad_left, pad_right),
+                "dataf": sfreq,
+                "soundf": metadata["soundf"],
+                **annots,
+            })
+
+    # sanity checks
+    # same features for all trials
+    first_trial_keys = set(all_trial_dicts[0].keys())
+    for trial in all_trial_dicts[1:]:
+        assert set(trial.keys()) == first_trial_keys
+    # same feature dimensionality for all trials (first axis)
+    for key in first_trial_keys:
+        if not isinstance(all_trial_dicts[0][key], np.ndarray):
+            continue
+        assert all(trial[key].shape[0] == all_trial_dicts[0][key].shape[0] for trial in all_trial_dicts)
+
+    return all_trial_dicts
+
+
 def prepare_out_file(config: DictConfig, data_spec: DictConfig) -> OutFileWithAnnotations:
+    if getattr(data_spec, "data_source", None) == "fomo":
+        return prepare_out_file_fomo(config, data_spec)
+
     data_dir = Path(config.corpus.paths.data_path) / data_spec.subject / config.corpus.name / "block_z"
 
     if data_spec.block is None:
@@ -405,7 +519,7 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
         if apparent_num_feature_samples != Yi.shape[-1]:
             if apparent_num_feature_samples > Yi.shape[-1]:
                 L.warning(f"Feature samples ({apparent_num_feature_samples}) do not match response samples ({Yi.shape[-1]}). Trimming features")
-                Xi = [xi[:, :Yi.shape[-1]] for xi in Xi]
+                Xi = [xi[:Yi.shape[-1]] for xi in Xi]
             else:
                 L.warning(f"Feature samples ({apparent_num_feature_samples}) do not match response samples ({Yi.shape[-1]}). Trimming response")
                 Yi = Yi[:, :apparent_num_feature_samples]

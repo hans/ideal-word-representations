@@ -37,9 +37,11 @@ ALL_MODEL_NOTEBOOKS = [
 
 
 ALL_ENCODING_SUBJECTS = [data_spec['subject'] for data_spec in config["encoding"]["data"]]
-ENCODING_DATASET = "timit"
+ENCODING_DATASET = "timit-no_repeats"
 
 DEFAULT_PHONEME_EQUIVALENCE = "phoneme_10frames"
+
+FOMO_LIBRARY_PATH = "/userdata/jgauthier/projects/neural-foundation-models"
 
 
 def select_gpu_device(wildcards, resources):
@@ -523,6 +525,8 @@ def run_encoder(input, output, wildcards, overrides=None):
     overrides_str = join_hydra_overrides({**local_overrides, **overrides})
 
     shell("""
+    # add fomo to path
+    export PYTHONPATH={FOMO_LIBRARY_PATH}:${{PYTHONPATH:-}}
     python estimate_encoder.py \
         hydra.run.dir={output.model_dir} \
         feature_sets={wildcards.feature_sets} \
@@ -744,11 +748,6 @@ rule electrode_study_within_subject:
 rule electrode_study_within_subject_all:
     input:
         lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
-                   for subject in ALL_ENCODING_SUBJECTS],
-
-rule electrode_study_within_subject_all_no_repeats:
-    input:
-        lambda _: [f"outputs/electrode_study/timit-no_repeats/{subject}/"
                    for subject in ALL_ENCODING_SUBJECTS],
 
 
