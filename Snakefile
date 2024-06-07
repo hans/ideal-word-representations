@@ -376,7 +376,7 @@ rule run_notebook:
     shell:
         """
         export HDF5_USE_FILE_LOCKING=FALSE
-        papermill --log-output \
+        papermill --autosave-cell-every 30 --log-output \
             {input.notebook} {output.notebook} \
             -p model_dir {input.model_dir} \
             -p output_dir {output.outdir} \
