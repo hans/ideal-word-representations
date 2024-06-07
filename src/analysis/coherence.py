@@ -63,21 +63,34 @@ def estimate_between_distance(trajectory, lengths,
     else:
         # num_samples: max number samples
         num_samples = max(len(between_samples_i) for between_samples_i in between_samples)
-    
-    between_distances = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
-    between_distances_offset = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
-    for i, between_samples_i in enumerate(tqdm(between_samples)):
-        traj_i, lengths_i = trajectory[i], lengths[i]
-        if traj_i.shape[0] > max_num_instances:
-            idxs = np.random.choice(traj_i.shape[0], size=max_num_instances, replace=False)
-            traj_i = traj_i[idxs]
-            lengths_i = lengths_i[idxs]
-        
-        for j, between_sample in enumerate(between_samples_i):
-            traj_j, lengths_j = trajectory[between_sample], lengths[between_sample]
+
+    sample_cache = {}
+    def fetch_sample(idx):
+        if idx in sample_cache:
+            return sample_cache[idx]
+        else:
+            traj_j, lengths_j = trajectory[idx], lengths[idx]
             if traj_j.shape[0] > max_num_instances:
                 idxs = np.random.choice(traj_j.shape[0], size=max_num_instances, replace=False)
                 traj_j, lengths_j = traj_j[idxs], lengths_j[idxs]
+
+            # prepare offset-aligned representation
+            traj_j_reverse = np.array([
+                np.pad(traj_j[l, :lengths_j[l], :][:, ::-1],
+                        ((0, traj_j.shape[1] - lengths_j[l]), (0, 0)),
+                        constant_values=np.nan)
+                for l in range(traj_j.shape[0])])
+
+            sample_cache[idx] = traj_j, traj_j_reverse, lengths_j
+            return traj_j, traj_j_reverse, lengths_j
+
+    between_distances = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
+    between_distances_offset = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
+    for i, between_samples_i in enumerate(tqdm(between_samples)):
+        traj_i, traj_i_reverse, lengths_i = fetch_sample(i)
+        
+        for j, between_sample in enumerate(between_samples_i):
+            traj_j, traj_j_reverse, lengths_j = fetch_sample(between_sample)
             
             for k in range(trajectory[0].shape[1]):
                 mask_i = lengths_i > k
@@ -87,15 +100,9 @@ def estimate_between_distance(trajectory, lengths,
                 
                 between_distances[i, k, j] = get_mean_distance(traj_i[mask_i, k, :], traj_j[mask_j, k, :], metric=metric).mean()
     
-                lengths_i_masked = lengths_i[mask_i]
-                lengths_j_masked = lengths_j[mask_j]
-                idx_for_offset_i = lengths_i_masked - k - 1
-                idx_for_offset_j = lengths_j_masked - k - 1
                 between_distances_offset[i, k, j] = get_mean_distance(
-                    traj_i[mask_i][np.arange(mask_i.sum()), idx_for_offset_i, :],
-                    traj_j[mask_j][np.arange(mask_j.sum()), idx_for_offset_j, :],
-                    metric=metric
-                ).mean()
+                    traj_i_reverse[mask_i, k, :], traj_j_reverse[mask_j, k, :],
+                    metric=metric).mean()
 
     return between_distances, between_distances_offset
 
