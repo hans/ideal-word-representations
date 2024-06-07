@@ -55,7 +55,8 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
     from data_utils import data_loader
     patient = data_loader.nfm_patient(data_spec.subject)
     task_event_dfs, block_ecog_activity = patient.load_task_ecog(
-        "TIMIT", "trial", zscore=False, include_task_levels=["trial"])
+        "TIMIT", "trial", zscore=False, keep_bands="hga",
+        include_task_levels=["trial"])
 
     # sanity checks
     assert len(block_ecog_activity) == len(task_event_dfs)
@@ -63,8 +64,7 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
         assert len(block_ecog) == len(task_event_df)
 
     # compute average HGA over 8 bands; subset grid electrodes
-    keep_bands = [29, 30, 31, 32, 33, 34, 35, 36]
-    all_trials = [[trial[keep_bands][:, keep_elec_idxs].mean(axis=0) for trial in block_ecog]
+    all_trials = [[trial[:, keep_elec_idxs].mean(axis=0) for trial in block_ecog]
                   for block_ecog in block_ecog_activity]
     
     # prepare sentence annotations
@@ -121,7 +121,6 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
         for trial_idx_in_block, (trial_idx, trial_row) in enumerate(trial_df.iterrows()):
             trial_name = trial_row.stimulus_name
             trial_ecog = block_ecog[trial_idx_in_block]
-            print(trial_ecog.shape)
 
             annots, metadata = get_trial_annotations(trial_name)
 
@@ -131,7 +130,7 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
             all_trial_dicts.append({
                 "name": trial_name,
                 "resp": trial_ecog,
-                "befaft": (pad_left, pad_right),
+                "befaft": np.array([pad_left, pad_right]),
                 "dataf": sfreq,
                 "soundf": metadata["soundf"],
                 **annots,
@@ -647,7 +646,7 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
                              cv=cv_inner,
                              verbose=1,
                              error_score=np.nan,
-                             n_jobs=4)
+                             n_jobs=2)
 
         try:
             model.fit(X[train], Y[train])
