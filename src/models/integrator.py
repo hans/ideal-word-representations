@@ -83,8 +83,6 @@ class ContrastiveEmbeddingObjective(nn.Module):
         if self.batch_soft_negatives:
             if embeddings_class is None:
                 raise ValueError("Must provide embeddings_class if using batch_soft_negatives")
-            if reduction != "mean":
-                raise ValueError("Must use mean reduction with batch_soft_negatives")
 
             # Compute pairwise cosine similarity matrix
             anchors = embeddings
@@ -436,21 +434,15 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
 
     model_representations = []
 
-    batch_size = 16
-    # TODO this is a hack -- better to have the dataset explicitly represent what
-    # layers it retains after subsetting
-    if hidden_state_dataset.num_layers > 1:
-        F = hidden_state_dataset.get_layer(model.config.base_model_layer)
-    else:
-        F = hidden_state_dataset.get_layer(0)
+    F = hidden_state_dataset.states
     
-    F = F.to(device)
     lengths = equiv_dataset.lengths.to(device)
 
     for batch_start in trange(0, hidden_state_dataset.num_frames, batch_size):
         batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, hidden_state_dataset.num_frames))
-        batch = torch.stack([get_sequence(F, equiv_dataset.S[idx], idx, model.config.max_length)
+        batch = torch.stack([get_sequence(F, equiv_dataset.S[idx], idx, model.config.max_length, layer=0)
                              for idx in batch_idxs])
+        batch = batch.to(device)
         
         lengths_batch = torch.minimum(lengths[batch_idxs], torch.tensor(model.config.max_length))
         # HACK
