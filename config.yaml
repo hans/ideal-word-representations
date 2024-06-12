@@ -106,6 +106,20 @@ models:
     model: rnn_8-aniso2
     equivalence: word_broad_10frames
 
+  # librispeech word models
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-aniso1
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-aniso2
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-aniso3
+    equivalence: word_broad_10frames
+
 encoding:
   data:
     - subject: EC152
@@ -131,9 +145,11 @@ encoding:
         start: 0
         end: 384
 
-    # good frontal coverage
+    # missing TIMIT events?
     # - subject: EC208
-    #   blocks: null
+    #   data_source: fomo
+    #   blocks:
+    #     - B1
     - subject: EC260
       blocks:
         - B1
@@ -153,20 +169,19 @@ encoding:
     - subject: EC250
       blocks:
         - B1
-    # missing BilingVowel TDT elecs
-    # - subject: EC270
-    #   blocks:
-    #     - B1
+    - subject: EC270
+      blocks:
+        - B1
     - subject: EC278
       blocks:
         - B27
       fit_channels:
         start: 0
         end: 168
-    # todo not available
-    # - subject: EC253
-    #   blocks:
-    #     - B1
+    - subject: EC253
+      data_source: fomo
+      blocks:
+        - B1
 
   model_comparisons:
     - model2: phoneme
@@ -184,8 +199,15 @@ encoding:
     - model2: word_broad-aniso2-w2v2_8
       model1: baseline
 
-    - model2: word_broad-aniso2-w2v2_8
-      model1: baseline_aud
+    - model2: ls-word_broad-aniso1-w2v2_8
+      model1: baseline
+    - model2: ls-word_broad-aniso2-w2v2_8
+      model1: baseline
+    - model2: ls-word_broad-aniso3-w2v2_8
+      model1: baseline
+
+    # - model2: word_broad-aniso2-w2v2_8
+    #   model1: baseline_aud
 
   permutation_tests:
     units:

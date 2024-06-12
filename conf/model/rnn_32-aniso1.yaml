@@ -1,0 +1,8 @@
+hidden_dim: 32
+output_dim: 32
+
+in_batch_soft_negatives: true
+
+learning_rate: 1.557322563040807e-05
+tau: 0.30466506756675743
+weight_decay: 0.013367738060321514

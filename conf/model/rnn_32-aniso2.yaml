@@ -1,0 +1,11 @@
+# _objective_20f84_00150_150_hidden_dim=256,learning_rate=0.0850,tau=0.0156,weight_decay=0.0000_2024-06-04_11-34-53
+# very good eval loss, eval_embedding_alignment_cosine
+
+hidden_dim: 256
+output_dim: 32
+
+in_batch_soft_negatives: true
+
+learning_rate: 0.08501870149611702
+tau: 0.01561589201432926
+weight_decay: 2.806439011124263e-05

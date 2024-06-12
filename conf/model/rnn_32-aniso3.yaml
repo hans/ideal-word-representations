@@ -1,0 +1,11 @@
+# _objective_20f84_00158_158_hidden_dim=64,learning_rate=0.0024,tau=0.0172,weight_decay=0.0008_2024-06-04_11-34-53
+# excellent eval_loss and also maximum isoscore of sweep
+
+hidden_dim: 64
+output_dim: 32
+
+in_batch_soft_negatives: true
+
+learning_rate: 0.002412986890453921
+tau: 0.017199774079177853
+weight_decay: 0.0007696703458159219
