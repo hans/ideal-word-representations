@@ -84,7 +84,12 @@ def estimate_between_distance(trajectory, lengths,
             sample_cache[idx] = traj_j, traj_j_reverse, lengths_j
             return traj_j, traj_j_reverse, lengths_j
 
+    # num_words * num_frames * num_samples
+    # cell (i, j, k) is the mean distance between tokens of word i at frame j and word k at frame j
     between_distances = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
+    # num_words * num_frames * num_samples
+    # cell (i, j, k) is the mean distance between tokens of word i at frame j and word k at frame j,
+    # where j is [0, num_frames) distance from the end of the word
     between_distances_offset = np.zeros((len(trajectory), trajectory[0].shape[1], num_samples)) * np.nan
     for i, between_samples_i in enumerate(tqdm(between_samples)):
         traj_i, traj_i_reverse, lengths_i = fetch_sample(i)
@@ -100,7 +105,8 @@ def estimate_between_distance(trajectory, lengths,
                 
                 between_distances[i, k, j] = get_mean_distance(traj_i[mask_i, k, :], traj_j[mask_j, k, :], metric=metric).mean()
     
-                between_distances_offset[i, k, j] = get_mean_distance(
+                offset_distance_k = lengths_i[mask_i] - k - 1
+                between_distances_offset[i, offset_distance_k, j] = get_mean_distance(
                     traj_i_reverse[mask_i, k, :], traj_j_reverse[mask_j, k, :],
                     metric=metric).mean()
 
