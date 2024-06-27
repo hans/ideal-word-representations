@@ -47,13 +47,27 @@ class StateSpaceAnalysisSpec:
             assert (self.cuts.onset_frame_idx < self.total_num_frames).all()
             assert (self.cuts.offset_frame_idx < self.total_num_frames).all()
 
-            # Make sure onset and offset idxs are within the span of the instance
-            for (label, instance_idx, _), cuts_group in self.cuts.groupby(self.cuts.index.names):
-                label_idx = self.labels.index(label)
-                start, end = self.target_frame_spans[label_idx][instance_idx]
+            # check consistency of cuts + target frame spans by merge-and-compare. faster than a for loop! :)
+            cuts_validity_check = pd.merge(self.cuts.reset_index("level", drop=True), self.target_frame_spans_df,
+                                           left_index=True, right_on=["label", "instance_idx"])
+            assert (cuts_validity_check.onset_frame_idx >= cuts_validity_check.start_frame).all()
+            assert (cuts_validity_check.offset_frame_idx <= cuts_validity_check.end_frame).all()
 
-                assert (cuts_group.onset_frame_idx >= start).all()
-                assert (cuts_group.offset_frame_idx <= end).all()
+    @property
+    def target_frame_spans_df(self) -> pd.DataFrame:
+        """
+        Return a dataframe representation of target frame spans. The keys `label` and `instance_idx`
+        are comparable to the keys in `cuts`.
+        """
+        return pd.DataFrame([
+            (label, instance_idx, start, end)
+            for label, frame_spans in zip(self.labels, self.target_frame_spans)
+            for instance_idx, (start, end) in enumerate(frame_spans)
+        ], columns=["label", "instance_idx", "start_frame", "end_frame"])
+
+    @property
+    def label_counts(self):
+        return pd.Series([len(spans) for spans in self.target_frame_spans], index=self.labels)
 
     def is_compatible_with(self, dataset: Union[SpeechHiddenStateDataset, np.ndarray]) -> bool:
         if isinstance(dataset, SpeechHiddenStateDataset):
