@@ -40,7 +40,7 @@ class StateSpaceAnalysisSpec:
         assert len(self.target_frame_spans) == len(self.labels)
 
         if self.cuts is not None:
-            assert set(self.cuts.index.names) == {"level", "label", "instance_idx"}
+            assert self.cuts.index.names == ["label", "instance_idx", "level"]
             assert set(self.cuts.columns) >= {"description", "onset_frame_idx", "offset_frame_idx"}
             assert set(self.cuts.index.get_level_values("label")) <= set(self.labels)
 
@@ -48,7 +48,7 @@ class StateSpaceAnalysisSpec:
             assert (self.cuts.offset_frame_idx < self.total_num_frames).all()
 
             # Make sure onset and offset idxs are within the span of the instance
-            for (label, instance_idx), cuts_group in self.cuts.groupby(["label", "instance_idx"]):
+            for (label, instance_idx, _), cuts_group in self.cuts.groupby(self.cuts.index.names):
                 label_idx = self.labels.index(label)
                 start, end = self.target_frame_spans[label_idx][instance_idx]
 
