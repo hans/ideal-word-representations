@@ -134,7 +134,7 @@ rule extract_hidden_states:
         gpu = 1
 
     output:
-        "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5"
+        "outputs/hidden_states/{base_model_name}/{dataset}.h5"
 
     run:
         outdir = Path(output[0]).parent
@@ -153,7 +153,7 @@ rule extract_hidden_states:
 rule prepare_equivalence_dataset:
     input:
         timit_data = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
         equivalence_config = "conf/equivalence/{equivalence_classer}.yaml"
 
     output:
@@ -183,7 +183,9 @@ def _get_equivalence_dataset(dataset: str, base_model_name: str, equivalence_cla
 
 
 def get_equivalence_dataset(wildcards):
-    return _get_equivalence_dataset(wildcards.dataset, wildcards.base_model_name, wildcards.equivalence_classer)
+    # if we have a target_dataset, we should be retrieving equivalences for there
+    return _get_equivalence_dataset(getattr(wildcards, "target_dataset", wildcards.dataset),
+                                    wildcards.base_model_name, wildcards.equivalence_classer)
 
 
 rule run:
@@ -193,7 +195,7 @@ rule run:
         model_config = "conf/model/{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
     resources:
@@ -226,7 +228,7 @@ rule tune_hparam:
         model_config = "conf/model/{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
         equivalence_dataset = "outputs/equivalence_datasets/{dataset}/{base_model_name}/{equivalence_classer}/equivalence.pkl"
 
     resources:
@@ -262,7 +264,7 @@ rule run_no_train:
         model_config = "conf/model/random{model_name}.yaml",
 
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
         equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NO_TRAIN_DEFAULT_EQUIVALENCE}/equivalence.pkl"
 
     output:
@@ -292,14 +294,14 @@ rule run_all:
 rule extract_embeddings:
     input:
         model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{target_dataset}.h5",
         equivalence_dataset = get_equivalence_dataset
 
     resources:
         gpu = 1
 
     output:
-        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{target_dataset}.npy"
 
     run:
         outdir = Path(output.embeddings).parent
@@ -321,16 +323,16 @@ rule extract_embeddings:
         """)
 
 
-rule extract_all_embeddings:
-    input:
-        expand("outputs/model_embeddings/{model_spec}/embeddings.npy",
-                model_spec=MODEL_SPEC_LIST)
 
+# rule extract_all_embeddings:
+#     input:
+#         expand("outputs/model_embeddings/{model_spec}/embeddings.npy",
+#                 model_spec=MODEL_SPEC_LIST)
 
 rule compute_state_spaces:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5"
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5"
 
     output:
         "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl"
@@ -365,9 +367,9 @@ rule run_notebook:
         phoneme_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_PHONEME_EQUIVALENCE}/equivalence.pkl",
         word_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_WORD_EQUIVALENCE}/equivalence.pkl",
 
-        hidden_states = "outputs/hidden_states/{dataset}/{base_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
         state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
-        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/embeddings.npy"
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}.npy"
 
     output:
         outdir = directory("outputs/notebooks/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{notebook}"),
@@ -396,30 +398,36 @@ rule run_all_notebooks:
                 model_spec=MODEL_SPEC_LIST, notebook=ALL_MODEL_NOTEBOOKS)
 
 
-def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) -> list[str]:
+def _get_inputs_for_encoding(feature_set: str, encoding_dataset: str, return_list=False) -> list[str]:
+    """
+    Args:
+        feature_set: Reference to a feature set in the config (`conf_encoder/feature_sets`)
+        encoding_dataset: Target dataset for encoding
+        return_list:
+
+    Returns:
+        A dict (or flattened list if `return_list`) of paths to the inputs required for encoding with the given feature set.
+    """
     with open(f"conf_encoder/feature_sets/{feature_set}.yaml", "r") as f:
         model_config = yaml.safe_load(f)
 
+    # The dataset on which the model was trained may be different than the target dataset
+    input_specs = {}
+    for key, feature_set in model_config.get("model_features", {}).items():
+        train_dataset = feature_set.get("train_dataset", encoding_dataset)
+        input_specs[key] = {
+            "hidden_states": f"outputs/hidden_states/{feature_set['base_model']}/{encoding_dataset}.h5",
+            "equivalence": _get_equivalence_dataset(encoding_dataset, feature_set['base_model'], feature_set['equivalence']),
+            "embeddings": f"outputs/model_embeddings/{train_dataset}/{feature_set['base_model']}/{feature_set['model']}/{feature_set['equivalence']}/{encoding_dataset}.npy",
+            "state_space": f"outputs/state_space_specs/{encoding_dataset}/{feature_set['base_model']}/state_space_specs.pkl"
+        }
+
+    # restructure to return a list of paths for each type of input
     ret = {
-        "hidden_states": [
-            f"outputs/hidden_states/{dataset}/{feat['base_model']}/hidden_states.h5"
-            for _, feat in model_config.get("model_features", {}).items()
-        ],
-
-        "embeddings": [
-            f"outputs/model_embeddings/{dataset}/{feat['base_model']}/{feat['model']}/{feat['equivalence']}/embeddings.npy"
-            for _, feat in model_config.get("model_features", {}).items()
-        ],
-
-        "equivalences": [
-            _get_equivalence_dataset(dataset, feat['base_model'], feat['equivalence'])
-            for _, feat in model_config.get("model_features", {}).items()
-        ],
-
-        "state_spaces": [
-            f"outputs/state_space_specs/{dataset}/{feat['base_model']}/state_space_specs.pkl"
-            for _, feat in model_config.get("model_features", {}).items()
-        ]
+        "hidden_states": [v["hidden_states"] for v in input_specs.values()],
+        "equivalences": [v["equivalence"] for v in input_specs.values()],
+        "state_spaces": [v["state_space"] for v in input_specs.values()],
+        "embeddings": [v["embeddings"] for v in input_specs.values()],
     }
 
     if return_list:
@@ -431,7 +439,7 @@ def _get_inputs_for_encoding(feature_set: str, dataset: str, return_list=False) 
 rule estimate_synthetic_encoder:
     input:
         dataset = "outputs/preprocessed_data/{dataset}",
-        hidden_states = "outputs/hidden_states/{dataset}/{target_model_name}/hidden_states.h5",
+        hidden_states = "outputs/hidden_states/{target_model_name}/{dataset}.h5",
         computed_inputs = lambda wildcards: itertools.chain.from_iterable(
             _get_inputs_for_encoding(feature_set, wildcards.dataset, return_list=True)
             for feature_set in config["synthetic_encoding"]["evaluations"][wildcards.evaluation_name]["models"]
