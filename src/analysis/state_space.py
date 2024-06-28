@@ -5,7 +5,7 @@ State space analysis tools for integrator models.
 from copy import deepcopy
 from functools import cached_property, wraps
 from dataclasses import dataclass
-from typing import Optional, Union, Any, Callable
+from typing import Optional, Union, Any, Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -133,6 +133,37 @@ class StateSpaceAnalysisSpec:
             target_frame_spans=new_target_frame_spans,
             cuts=new_cuts,
         )
+
+    def groupby(self, grouper) -> Iterable[tuple[Any, "StateSpaceAnalysisSpec"]]:
+        if self.cuts is None:
+            raise ValueError("Cannot groupby without cuts")
+
+        for group_key, group_df in self.cuts.groupby(grouper):
+            new_target_frame_spans = []
+            new_labels = []
+            new_cut_idxs = []
+            for label, label_df in group_df.groupby("label"):
+                label_idx = self.labels.index(label)
+                new_labels.append(label)
+                new_label_spans = []
+                for instance_idx, instance_df in label_df.groupby("instance_idx"):
+                    new_label_spans.append(self.target_frame_spans[label_idx][instance_idx])
+                    new_cut_idxs.append((label, instance_idx))
+                new_target_frame_spans.append(new_label_spans)
+
+            cut_indexer = pd.DataFrame(new_cut_idxs, columns=["label", "instance_idx"])
+            cut_indexer["new_instance_idx"] = cut_indexer.groupby("label").cumcount()
+            new_cuts = pd.merge(self.cuts.reset_index(), cut_indexer, on=["label", "instance_idx"])
+            # relabel instance_idx
+            new_cuts["instance_idx"] = new_cuts.new_instance_idx
+            new_cuts = new_cuts.drop(columns=["new_instance_idx"]).set_index(["label", "instance_idx", "level"])
+            
+            yield group_key, StateSpaceAnalysisSpec(
+                total_num_frames=self.total_num_frames,
+                labels=new_labels,
+                target_frame_spans=new_target_frame_spans,
+                cuts=new_cuts,
+            )
     
     def keep_top_k(self, k=100):
         """
@@ -356,7 +387,7 @@ def aggregate_state_trajectory(trajectory: list[np.ndarray],
 
     ret = [agg_fn(traj, state_space_spec=state_space_spec,
                   label_idx=idx)
-           for idx, traj in enumerate(tqdm(trajectory, unit="label", desc="Aggregating"))]
+           for idx, traj in enumerate(tqdm(trajectory, unit="label", desc="Aggregating", leave=False))]
     if not keepdims:
         ret = [traj.squeeze(1) for traj in ret]
 

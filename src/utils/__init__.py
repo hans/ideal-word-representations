@@ -1,5 +1,34 @@
+from pathlib import Path
+import re
+from typing import Union, Callable
+
 import numpy as np
 import pandas as pd
+
+
+def concat_csv_with_indices(path_glob: str,
+                            path_patterns: list[Union[str, re.Pattern, Callable[[Path], str]]],
+                            index_names: list[str]):
+    """
+    Load a collection of dataframes organized within folders, and use patterns on the
+    folder names to create a concatenated multi-indexed dataframe.
+
+    Args:
+    path_glob: a glob pattern for the folders containing the dataframes
+    path_patterns: a list of patterns to apply to the path names to extract indices
+    index_names: a list of names for the indices
+    """
+    assert len(path_patterns) == len(index_names)
+
+    paths = list(Path().glob(path_glob))
+    dfs = [pd.read_csv(p) for p in paths]
+    index_keys = [
+        tuple([patt(p) if callable(patt) else re.search(patt, str(p)).group(1)
+               for patt in path_patterns])
+        for p in paths
+    ]
+
+    return pd.concat(dfs, keys=index_keys, names=index_names)
 
 
 def ndarray_to_long_dataframe(ndarray: np.ndarray, axis_names: list[str]):
