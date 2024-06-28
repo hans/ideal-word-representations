@@ -32,7 +32,7 @@ ALL_MODEL_NOTEBOOKS = [
     "predictions_word",
     "state_space",
     "trf",
-    "word_discrimination",
+    "word_id",
 ]
 
 

@@ -2,13 +2,15 @@
 State space analysis tools for integrator models.
 """
 
-from functools import cached_property
+from copy import deepcopy
+from functools import cached_property, wraps
 from dataclasses import dataclass
 from typing import Optional, Union, Any, Callable
 
 import numpy as np
 import pandas as pd
 import torch
+from tqdm.auto import tqdm
 
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
@@ -96,6 +98,51 @@ class StateSpaceAnalysisSpec:
             target_frame_spans=target_frame_spans,
             cuts=new_cuts,
         )
+    
+    def subsample_instances(self, max_instances_per_label: int, random=True):
+        """
+        Return a copy of the current state space analysis spec with at most
+        `max_instances_per_label` instances per label.
+        """
+        new_target_frame_spans, new_cuts = [], {}
+        for label, frame_spans in zip(self.labels, self.target_frame_spans):
+            if len(frame_spans) <= max_instances_per_label:
+                keep_idxs = np.arange(len(frame_spans))
+            else:
+                if random:
+                    keep_idxs = np.random.choice(len(frame_spans), max_instances_per_label, replace=False)
+                else:
+                    keep_idxs = np.arange(max_instances_per_label)
+
+            new_target_frame_spans.append([frame_spans[i] for i in keep_idxs])
+            if self.cuts is not None:
+                new_cuts_i = self.cuts.loc[label]
+                new_cuts_i = new_cuts_i[new_cuts_i.index.get_level_values("instance_idx").isin(keep_idxs)]
+
+                # Relabel instance_idx
+                new_cuts_i = new_cuts_i.reset_index("instance_idx")
+                new_cuts_i["instance_idx"] = new_cuts_i.instance_idx.map({old_idx: new_idx for new_idx, old_idx in enumerate(keep_idxs)})
+                new_cuts_i = new_cuts_i.set_index("instance_idx", append=True).reorder_levels(["instance_idx", "level"])
+                new_cuts[label] = new_cuts_i
+
+        new_cuts = pd.concat(new_cuts, names=["label"]).sort_index() if self.cuts is not None else None
+
+        return StateSpaceAnalysisSpec(
+            total_num_frames=self.total_num_frames,
+            labels=self.labels,
+            target_frame_spans=new_target_frame_spans,
+            cuts=new_cuts,
+        )
+    
+    def keep_top_k(self, k=100):
+        """
+        Return a copy of the current state space analysis spec with only the top `k`
+        labels by instance count.
+        """
+        if k >= len(self.labels):
+            return deepcopy(self)
+        top_k_labels = self.label_counts.sort_values(ascending=False).head(k).index
+        return self.drop_labels(drop_names=set(self.labels) - set(top_k_labels))
     
     def expand_by_cut_index(self, cut_level: str) -> "StateSpaceAnalysisSpec":
         """
@@ -222,8 +269,14 @@ def prepare_state_trajectory(
     return ret
 
 
+def make_simple_agg_fn(fn):
+    @wraps(fn)
+    def agg_fn(xs, *args, **kwargs):
+        return fn(xs)
+    return agg_fn
+
 def make_agg_fn_mean_last_k(k):
-    def agg_fn(xs):
+    def agg_fn(xs, *args, **kwargs):
         nan_onset = np.isnan(xs[:, :, 0]).argmax(axis=1)
         # if there are no nans, set nan_onset to len
         nan_onset[~np.isnan(xs[:, :, 0]).any(axis=1)] = xs.shape[1]
@@ -233,18 +286,63 @@ def make_agg_fn_mean_last_k(k):
         ])
     return agg_fn
 
-TRAJECTORY_AGG_FNS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+class AggMeanWithinCut:
+    def __init__(self, cut_level: str):
+        self.cut_level = cut_level
+    def __call__(self, trajectory_i: np.ndarray, state_space_spec: StateSpaceAnalysisSpec,
+                 label_idx: int, pad: Union[str, float] = "last") -> np.ndarray:
+        if state_space_spec.cuts is None:
+            raise ValueError("No cuts available to aggregate within")
+        
+        label = state_space_spec.labels[label_idx]
+        cuts_df = state_space_spec.cuts.loc[label]
+        try:
+            cuts_df = cuts_df.xs(self.cut_level, level="level")
+        except KeyError:
+            raise ValueError(f"Cut level {self.cut_level} not found in cuts")
+
+        assert set(cuts_df.index.get_level_values("instance_idx")) == set(np.arange(len(trajectory_i)))
+
+        max_num_cuts: int = cuts_df.groupby("instance_idx").size().max()  # type: ignore
+        new_trajs = np.zeros((len(trajectory_i), max_num_cuts, trajectory_i.shape[2]), dtype=float)
+        
+        for instance_idx, instance_cuts in cuts_df.groupby("instance_idx"):
+            instance_frame_start, _ = state_space_spec.target_frame_spans[label_idx][instance_idx]
+            for cut_idx, (_, cut) in enumerate(instance_cuts.iterrows()):
+                # get index of cut relative to instance onset frame
+                cut_start: int = cut.onset_frame_idx - instance_frame_start
+                cut_end: int = cut.offset_frame_idx - instance_frame_start
+
+                new_trajs[instance_idx, cut_idx] = np.mean(trajectory_i[instance_idx, cut_start:cut_end], axis=0, keepdims=True)
+
+            if pad == "last":
+                pad_value = new_trajs[instance_idx, cut_idx]
+            elif isinstance(pad, str):
+                raise ValueError(f"Invalid pad value {pad}; use `last` or a float")
+            else:
+                pad_value = pad
+
+            if cut_idx < max_num_cuts - 1:
+                new_trajs[instance_idx, cut_idx + 1:] = pad_value
+
+        return new_trajs
+        
+
+TRAJECTORY_AGG_FNS: dict[str, Callable] = {
     "mean": lambda xs: np.nanmean(xs, axis=1, keepdims=True),
     "max": lambda xs: np.nanmax(xs, axis=1, keepdims=True),
     "last_frame": lambda xs: xs[np.arange(xs.shape[0]), np.isnan(xs[:, :, 0]).argmax(axis=1) - 1][:, None, :],
 }
+TRAJECTORY_AGG_FNS = {k: make_simple_agg_fn(v) for k, v in TRAJECTORY_AGG_FNS.items()}
 
-TRAJECTORY_META_AGG_FNS: dict[str, Callable[[Any], Callable[[np.ndarray], np.ndarray]]] = {
+TRAJECTORY_META_AGG_FNS: dict[str, Callable] = {
     "mean_last_k": make_agg_fn_mean_last_k,
+    "mean_within_cut": AggMeanWithinCut,
 }
 
 
 def aggregate_state_trajectory(trajectory: list[np.ndarray],
+                               state_space_spec: StateSpaceAnalysisSpec,
                                agg_fn_spec: Union[str, tuple[str, Any]],
                                keepdims=False) -> list[np.ndarray]:
     """
@@ -256,8 +354,39 @@ def aggregate_state_trajectory(trajectory: list[np.ndarray],
     else:
         agg_fn = TRAJECTORY_AGG_FNS[agg_fn_spec]
 
-    ret = [agg_fn(traj) for traj in trajectory]
+    ret = [agg_fn(traj, state_space_spec=state_space_spec,
+                  label_idx=idx)
+           for idx, traj in enumerate(tqdm(trajectory, unit="label", desc="Aggregating"))]
     if not keepdims:
         ret = [traj.squeeze(1) for traj in ret]
 
     return ret
+
+
+def flatten_trajectory(trajectory: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return a flattened representation of all state space trajectories.
+
+    Returns:
+    - all_trajectories: (N, D) array of all state space trajectories
+    - all_trajectories_src: (N, 3) array
+        describes, for each row of `all_trajectories`, the originating label, instance idx, and frame idx
+    """
+
+    all_trajectories = np.concatenate([
+        traj_i.reshape(-1, traj_i.shape[-1]) for traj_i in trajectory
+    ])
+    all_trajectories_src = np.concatenate([
+        np.array([(label_idx, instance_idx, frame_idx) for label_idx, traj_i in enumerate(trajectory)
+                 for instance_idx, frame_idx in np.ndindex(traj_i.shape[:2])])
+    ])
+    assert all_trajectories.shape[0] == all_trajectories_src.shape[0]
+    assert all_trajectories_src.shape[1] == 3
+    assert all_trajectories_src[:, 0].max() == len(trajectory) - 1
+
+    # TODO this assumes NaN padding
+    retain_idxs = ~np.isnan(all_trajectories).any(axis=1)
+    all_trajectories = all_trajectories[retain_idxs]
+    all_trajectories_src = all_trajectories_src[retain_idxs]
+
+    return all_trajectories, all_trajectories_src
