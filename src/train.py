@@ -56,6 +56,14 @@ def hyperparameter_space(trial):
         "hidden_dim": tune.choice([32, 64, 128, 256]),
     }
 
+def hyperparameter_space_hinge(trial):
+    return {
+        "learning_rate": tune.loguniform(1e-5, 1e-1),
+        "weight_decay": tune.loguniform(1e-5, 1e-1),
+        "margin": tune.loguniform(1e-3, 1),
+        "hidden_dim": tune.choice([32, 64, 128, 256]),
+    }
+
 
 HYPERPARAMETER_OBJECTIVE_DIRECTION = "maximize"
 def hyperparameter_objective(metrics: dict[str, float]) -> float:
@@ -78,6 +86,10 @@ def train(config: DictConfig):
 
     equiv_dataset_path = config.equivalence.path
     equiv_dataset: SpeechEquivalenceDataset = torch.load(equiv_dataset_path)
+
+    if config.get("smoke_test"):
+        with equiv_dataset.modify_Q_ctx():
+            equiv_dataset.Q[1000:] = -1
 
     # Prepare negative-sampling dataset
     if config.trainer.mode in ["train", "hyperparameter_search"]:
@@ -137,6 +149,10 @@ def train(config: DictConfig):
     if trainer_mode == "train":
         trainer.train()
     elif trainer_mode == "hyperparameter_search":
+        hp_space = hyperparameter_space
+        if getattr(config.model, "loss_form") == "hinge":
+            hp_space = hyperparameter_space_hinge
+
         trainer.hyperparameter_search(
             direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
             backend="ray",

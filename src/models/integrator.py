@@ -4,7 +4,7 @@ import itertools
 import logging
 from pathlib import Path
 import random
-from typing import Optional, Iterator
+from typing import Optional, Iterator, Literal
 
 from datasets import Dataset, IterableDataset
 from IsoScore.IsoScore import IsoScore
@@ -132,6 +132,84 @@ class ContrastiveEmbeddingObjective(nn.Module):
         if return_soft_negatives:
             return train_loss, (soft_negatives, mask, pairwise_cosine_sim)
         return train_loss
+    
+
+class ContrastiveEmbeddingHingeObjective(nn.Module):
+    # TODO redundancy with ContrastiveEmbeddingObjective
+    def __init__(self, margin=0.1, batch_soft_negatives=False,
+                 regularization=None, **kwargs):
+        super(ContrastiveEmbeddingHingeObjective, self).__init__()
+        self.margin = torch.tensor(margin)
+        self.batch_soft_negatives = batch_soft_negatives
+
+        regularization_type = regularization[0] if isinstance(regularization, (tuple, list)) else regularization
+        if regularization_type not in [None, "covariance", "spectral_norm"]:
+            raise ValueError(f"Unknown regularization {regularization}")
+        self.regularization_type = regularization_type
+        self.regularization = regularization
+
+    def forward(self, embeddings, pos_embeddings, neg_embeddings,
+                reduction="mean",
+                embeddings_class=None,
+                return_soft_negatives=False):
+        # torch.autograd.set_detect_anomaly(True)
+        if reduction != "mean":
+            raise NotImplementedError()
+
+        pos_dist = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
+
+        if neg_embeddings is not None:
+            neg_dist = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
+        elif self.batch_soft_negatives:
+            if embeddings_class is None:
+                raise ValueError("Must provide embeddings_class if using batch_soft_negatives")
+
+            # Compute pairwise cosine similarity matrix
+            anchors = embeddings
+            soft_negatives = embeddings  # TODO could also include hard positives/negatives of other examples
+            pairwise_cosine_sim = F.cosine_similarity(anchors.unsqueeze(1), soft_negatives.unsqueeze(0), dim=2)
+
+            # Evaluate upper triangle
+            mask = torch.triu(embeddings_class.unsqueeze(1) != embeddings_class.unsqueeze(0), diagonal=1)
+            pairwise_cosine_sim = pairwise_cosine_sim[mask]
+
+            neg_dist = pairwise_cosine_sim
+        else:
+            raise ValueError("Hinge loss needs hard or soft negatives")
+        
+        x = self.margin - pos_dist.mean() + neg_dist.mean()
+        train_loss = F.relu(x)
+
+        ### Regularization
+
+        if self.training and self.regularization_type is not None:
+            regularization_loss = torch.tensor(0.0, device=embeddings.device)
+            if self.regularization_type == "covariance":
+                scaler = float(self.regularization[1]) if isinstance(self.regularization, (list, tuple)) else 1.0
+                if embeddings.shape[0] >= 2 and embeddings.shape[1] >= 2:
+                    # Regularize by penalizing divergence of embedding covariance matrix from identity
+                    # i.e., encourage axes to be decorrelated
+                    embedding_cov = torch.cov(embeddings.T)
+
+                    # Only penalize covariance off diagonal
+                    embedding_cov = embedding_cov[~torch.eye(embedding_cov.shape[0], dtype=bool)]
+                    target = torch.zeros_like(embedding_cov)
+
+                    # TODO tune the scale of this relative to training loss
+                    regularization_loss = scaler * F.mse_loss(embedding_cov, target)
+
+                    if torch.isnan(regularization_loss):
+                        import ipdb; ipdb.set_trace()
+                
+            elif self.regularization_type == "spectral_norm":
+                # Do nothing -- this happens outside the loss function, which only has access to embeddings
+                pass
+
+            train_loss += regularization_loss
+
+        if return_soft_negatives:
+            return train_loss, (soft_negatives, mask, pairwise_cosine_sim)
+        return train_loss
 
 
 @dataclass
@@ -161,7 +239,13 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
     num_layers: int = 1
     hidden_dim: int = 256
     output_dim: int = 4
+
+    # Loss config
+    loss_form: Literal["ratio", "hinge"] = "ratio"
+    # only relevant for ratio objective
     tau: float = 0.1
+    # only relevant for hinge objective
+    margin: float = 0.1
 
     in_batch_soft_negatives: bool = True
     """
@@ -212,10 +296,17 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         if neg is None and not in_batch_soft_negatives:
             raise ValueError("Must provide negative examples if not using in_batch_soft_negatives")
 
-        loss_fn = ContrastiveEmbeddingObjective(
-            tau=self.config.tau,
-            batch_soft_negatives=in_batch_soft_negatives,
-            regularization=self.config.regularization)
+        loss_kwargs = dict(batch_soft_negatives=in_batch_soft_negatives,
+                           regularization=self.config.regularization)
+        if self.config.loss_form == "ratio":
+            loss_fn = ContrastiveEmbeddingObjective(
+                tau = self.config.tau, **loss_kwargs)
+        elif self.config.loss_form == "hinge":
+            loss_fn = ContrastiveEmbeddingHingeObjective(
+                margin=self.config.margin, **loss_kwargs)
+        else:
+            raise ValueError(f"Unknown loss form {self.config.loss_form}")
+
         ret = loss_fn(embeddings, pos_embeddings, neg_embeddings,
                       reduction=loss_reduction,
                       embeddings_class=kwargs.get("example_idx"),
