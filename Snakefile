@@ -281,7 +281,8 @@ rule run_no_train:
             +base_model.hidden_state_path={input.hidden_states} \
             equivalence={NO_TRAIN_DEFAULT_EQUIVALENCE} \
             +equivalence.path={input.equivalence_dataset} \
-            trainer.mode=no_train
+            trainer.mode=no_train \
+            device=cpu
         """
 
 
