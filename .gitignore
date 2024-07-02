@@ -13,3 +13,5 @@ outputs
 
 # transient notebooks
 202*.ipynb
+# transient dirs
+2024*
