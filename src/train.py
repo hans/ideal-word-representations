@@ -1,4 +1,5 @@
 from dataclasses import replace
+from functools import partial
 import logging 
 from pathlib import Path
 
@@ -23,7 +24,8 @@ def make_model_init(config: integrator.ContrastiveEmbeddingModelConfig, device="
         if trial is not None:
             config_trial = replace(config,
                 hidden_dim=trial["hidden_dim"],
-                tau=trial["tau"])
+                tau=trial.get("tau"),
+                margin=trial.get("margin"))
         else:
             config_trial = config
         return integrator.ContrastiveEmbeddingModel(config_trial).to(device)  # type: ignore
@@ -125,6 +127,7 @@ def train(config: DictConfig):
         config.training_args.learning_rate = model_learning_rate
 
     training_args = transformers.TrainingArguments(
+        use_cpu=config.device == "cpu",
         output_dir=HydraConfig.get().runtime.output_dir,
         logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
         max_steps=max_training_steps,
@@ -138,28 +141,32 @@ def train(config: DictConfig):
     trainer_config.pop("callbacks", None)
     trainer_mode = trainer_config.pop("mode", "train")
     hparam_config = trainer_config.pop("hyperparameter_search", None)
+
+    loss_form: integrator.ContrastiveLossSpec = getattr(config.model, "loss_form", "ratio")
+    compute_metrics = partial(integrator.COMPUTE_METRICS[loss_form], model_config=model_config)
+
     trainer = transformers.Trainer(
         args=training_args,
         model=None, model_init=model_init,
         callbacks=callbacks,
         train_dataset=train_dataset, eval_dataset=eval_dataset,
-        compute_metrics=integrator.compute_metrics,
+        compute_metrics=compute_metrics,
         **trainer_config)
 
     if trainer_mode == "train":
         trainer.train()
     elif trainer_mode == "hyperparameter_search":
         hp_space = hyperparameter_space
-        if getattr(config.model, "loss_form") == "hinge":
+        if loss_form == "hinge":
             hp_space = hyperparameter_space_hinge
 
         trainer.hyperparameter_search(
             direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
             backend="ray",
             n_trials=hparam_config.n_trials,
-            hp_space=hyperparameter_space,
+            hp_space=hp_space,
             compute_objective=hyperparameter_objective,
-            resources_per_trial={"gpu": 1/4., "cpu": 1},
+            resources_per_trial={"gpu": 0.4, "cpu": 1},
             scheduler=instantiate(hparam_config.scheduler,
                                   mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
         )
