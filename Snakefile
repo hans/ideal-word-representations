@@ -32,6 +32,7 @@ ALL_MODEL_NOTEBOOKS = [
     "predictions_word",
     "state_space",
     "trf",
+    "within_word_gradience",
     "word_id",
 ]
 
