@@ -1,0 +1,12 @@
+# _objective_08fd1_00061_61_hidden_dim=256,learning_rate=0.0000,margin=0.0038,weight_decay=0.0032_2024-07-02_18-17-39
+# {'hidden_dim': 256, 'learning_rate': 1.0489129591818482e-05, 'margin': 0.003826677479763703, 'weight_decay': 0.003247713120247835}
+
+output_dim: 32
+
+in_batch_soft_negatives: true
+loss_form: hinge
+
+hidden_dim: 256
+learning_rate: 1.0489129591818482e-05
+margin: 0.003826677479763703
+weight_decay: 0.003247713120247835
