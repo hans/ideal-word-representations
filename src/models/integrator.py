@@ -158,22 +158,25 @@ class ContrastiveEmbeddingHingeObjective(nn.Module):
 
         pos_sim = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
 
-        if neg_embeddings is not None:
-            neg_sim = F.cosine_similarity(embeddings, neg_embeddings, dim=1)
-        elif self.batch_soft_negatives:
-            if embeddings_class is None:
-                raise ValueError("Must provide embeddings_class if using batch_soft_negatives")
+        assert neg_embeddings is None, "not supported"
+        assert self.batch_soft_negatives
 
-            # Compute pairwise cosine similarity matrix
-            anchors = embeddings
-            soft_negatives = embeddings  # TODO could also include hard positives/negatives of other examples
-            neg_sim = F.cosine_similarity(anchors.unsqueeze(1), soft_negatives.unsqueeze(0), dim=2)
-        else:
-            raise ValueError("Hinge loss needs hard or soft negatives")
+        if embeddings_class is None:
+            raise ValueError("Must provide embeddings_class if using batch_soft_negatives")
 
-        loss = self.margin - (pos_sim - neg_sim)
-        loss = F.relu(loss)
-        loss = loss.mean()
+        # Compute pairwise cosine similarity matrix
+        anchors = embeddings
+        soft_negatives = embeddings  # TODO could also include hard positives/negatives of other examples
+        neg_sim = F.cosine_similarity(anchors.unsqueeze(1), soft_negatives.unsqueeze(0), dim=2)
+
+        # prepare to zero out the diagonal
+        mask = embeddings_class.unsqueeze(1) != embeddings_class.unsqueeze(0)
+
+        pairwise_sim = pos_sim[None, :] - neg_sim
+        pairwise_sim = pairwise_sim[mask]
+
+        loss = self.margin - pairwise_sim
+        loss = F.relu(loss).mean()
 
         ### Regularization
 
@@ -203,7 +206,7 @@ class ContrastiveEmbeddingHingeObjective(nn.Module):
             loss += regularization_loss
 
         if return_soft_negatives:
-            return loss, soft_negatives
+            return loss, (soft_negatives, mask, pairwise_sim)
         return loss
 
 
@@ -258,7 +261,7 @@ class ContrastiveEmbeddingModelOutput(ModelOutput):
 
     embeddings_soft_negative: Optional[torch.Tensor] = None
     soft_negative_mask: Optional[torch.Tensor] = None
-    soft_negative_pairwise_cosine_sim: Optional[torch.Tensor] = None
+    soft_negative_pairwise_sim: Optional[torch.Tensor] = None
 
 
 class ContrastiveEmbeddingModel(PreTrainedModel):
@@ -337,45 +340,24 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
     def _prepare_output(self, loss_ret, embeddings, pos_embeddings, neg_embeddings,
                         has_soft_negatives=False,
                         return_embeddings=True) -> ContrastiveEmbeddingModelOutput:
-        if self.config.loss_form == "ratio":
-            if has_soft_negatives:
-                loss = loss_ret[0]
-                soft_neg_embeddings, mask, pairwise_cosine_sim = loss_ret[1]
-            else:
-                loss = loss_ret
-
-            if not return_embeddings:
-                return ContrastiveEmbeddingModelOutput(loss=loss)
-            else:
-                return ContrastiveEmbeddingModelOutput(
-                    loss=loss,
-                    embeddings=embeddings,
-                    embeddings_hard_positive=pos_embeddings,
-                    embeddings_hard_negative=neg_embeddings,
-                    embeddings_soft_negative=soft_neg_embeddings,
-                    soft_negative_mask=mask,
-                    soft_negative_pairwise_cosine_sim=pairwise_cosine_sim
-                )
-        elif self.config.loss_form == "hinge":
-            if has_soft_negatives:
-                loss = loss_ret[0]
-                soft_neg_embeddings = loss_ret[1]
-            else:
-                loss = loss_ret
-                soft_neg_embeddings = None
-
-            if not return_embeddings:
-                return ContrastiveEmbeddingModelOutput(loss=loss)
-            else:
-                return ContrastiveEmbeddingModelOutput(
-                    loss=loss,
-                    embeddings=embeddings,
-                    embeddings_hard_positive=pos_embeddings,
-                    embeddings_hard_negative=neg_embeddings,
-                    embeddings_soft_negative=soft_neg_embeddings
-                )
+        if has_soft_negatives:
+            loss = loss_ret[0]
+            soft_neg_embeddings, mask, pairwise_sim = loss_ret[1]
         else:
-            raise ValueError(f"Unknown loss form {self.config.loss_form}")
+            loss = loss_ret
+
+        if not return_embeddings:
+            return ContrastiveEmbeddingModelOutput(loss=loss)
+        else:
+            return ContrastiveEmbeddingModelOutput(
+                loss=loss,
+                embeddings=embeddings,
+                embeddings_hard_positive=pos_embeddings,
+                embeddings_hard_negative=neg_embeddings,
+                embeddings_soft_negative=soft_neg_embeddings,
+                soft_negative_mask=mask,
+                soft_negative_pairwise_sim=pairwise_sim
+            )
 
 
 def get_sequence(F, start_index, end_index, max_length, layer=0):
@@ -597,7 +579,7 @@ def compute_embedding_loss(embeddings, pos_embeddings, neg_embeddings, tau=0.1):
 
 def compute_embedding_alignment(embeddings, pos_embeddings, metric="euclidean"):
     """
-    Compute average Euclidean distance between embeddings and their positive anchors.
+    Compute average Euclidean/cosine distance between embeddings and their positive anchors.
     """
     if metric == "cosine":
         embeddings /= np.linalg.norm(embeddings, ord=2, axis=1, keepdims=True)
@@ -661,17 +643,16 @@ def compute_metrics(p: EvalPrediction, model_config: ContrastiveEmbeddingModelCo
 
 
 def compute_metrics_hinge(p: EvalPrediction, model_config: ContrastiveEmbeddingModelConfig):
-    assert len(p.predictions) == 3
     # only designed for soft negative case right now
     assert model_config.in_batch_soft_negatives
-    embeddings, embeddings_hard_positive, embeddings_soft_negative = p.predictions
+    embeddings, embeddings_hard_positive, _, _, soft_negative_sims = p.predictions
 
     assert model_config.margin is not None
 
-    pos_sim = F.cosine_similarity(torch.tensor(embeddings), torch.tensor(embeddings_hard_positive), dim=1)
-    neg_sim = F.cosine_similarity(torch.tensor(embeddings), torch.tensor(embeddings_soft_negative), dim=1)
-    
-    eval_loss = (model_config.margin - (pos_sim - neg_sim)).clamp(min=0).mean().item()
+    # pos_sim = F.cosine_similarity(torch.tensor(embeddings), torch.tensor(embeddings_hard_positive), dim=1)
+    # neg_sim = F.cosine_similarity(torch.tensor(embeddings), torch.tensor(embeddings_soft_negative), dim=1)
+
+    eval_loss = (model_config.margin - soft_negative_sims).clip(0, None).mean()
 
     return {
         "eval_loss": eval_loss,
