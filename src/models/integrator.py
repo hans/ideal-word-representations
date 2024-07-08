@@ -313,7 +313,7 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
 
         ret = loss_fn(embeddings, pos_embeddings, neg_embeddings,
                       reduction=loss_reduction,
-                      embeddings_class=kwargs.get("example_idx"),
+                      embeddings_class=kwargs.get("example_class"),
                       return_soft_negatives=in_batch_soft_negatives)
         
         return self._prepare_output(ret, embeddings, pos_embeddings, neg_embeddings,
