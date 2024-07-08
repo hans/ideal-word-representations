@@ -10,6 +10,9 @@ from datasets import Dataset, IterableDataset
 from IsoScore.IsoScore import IsoScore
 import numpy as np
 from scipy.spatial.distance import cdist, pdist
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score
+from sklearn.preprocessing import LabelBinarizer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -604,6 +607,28 @@ def compute_embedding_axis_correlation(embeddings: np.ndarray):
     return np.abs(corrs[np.triu_indices_from(corrs, k=1)]).mean()
 
 
+def compute_mean_average_precision(embeddings: np.ndarray, classes: np.ndarray):
+    """
+    estimate classification performance by learning a classifier and calculating mean
+    average precision
+    """
+    # Binarize the labels for the mAP calculation
+    lb = LabelBinarizer()
+    binarized_labels = lb.fit_transform(classes)
+
+    # Train a simple logistic regression classifier on the embeddings
+    classifier = LogisticRegression(max_iter=1000)
+    classifier.fit(embeddings, classes)
+
+    # Get the classifier's prediction probabilities
+    pred_probs = classifier.predict_proba(embeddings)
+
+    # Calculate the mean average precision (mAP)
+    map_score = average_precision_score(binarized_labels, pred_probs, average="macro")
+
+    return map_score
+
+
 def compute_metrics(p: EvalPrediction, model_config: ContrastiveEmbeddingModelConfig):
     hard_negative_embeddings, soft_negative_embeddings = None, None
     soft_negative_distances = None
@@ -619,8 +644,7 @@ def compute_metrics(p: EvalPrediction, model_config: ContrastiveEmbeddingModelCo
         embeddings, hard_positive_embeddings, hard_negative_embeddings = p.predictions[:3]
         soft_negative_embeddings, _, soft_negative_distances = p.predictions[3:]
 
-    assert isinstance(p.label_ids, np.ndarray)
-    example_classes = p.label_ids
+    example_idxs, example_classes = p.label_ids
     assert embeddings.shape[0] == example_classes.shape[0]
 
     eval_soft_loss, eval_hard_loss = None, None
@@ -639,6 +663,7 @@ def compute_metrics(p: EvalPrediction, model_config: ContrastiveEmbeddingModelCo
         "eval_embedding_uniformity": compute_embedding_uniformity(embeddings),
         "eval_embedding_corr": compute_embedding_axis_correlation(embeddings),
         "eval_embedding_isoscore": IsoScore(embeddings),
+        "eval_mAP": compute_mean_average_precision(embeddings, example_classes),
     }
 
 
@@ -654,6 +679,9 @@ def compute_metrics_hinge(p: EvalPrediction, model_config: ContrastiveEmbeddingM
 
     eval_loss = (model_config.margin - soft_negative_sims).clip(0, None).mean()
 
+    example_idxs, example_classes = p.label_ids
+    assert embeddings.shape[0] == example_classes.shape[0]
+
     return {
         "eval_loss": eval_loss,
         "eval_embedding_norm": np.linalg.norm(embeddings, ord=2, axis=1).mean(),
@@ -662,6 +690,7 @@ def compute_metrics_hinge(p: EvalPrediction, model_config: ContrastiveEmbeddingM
         "eval_embedding_uniformity": compute_embedding_uniformity(embeddings),
         "eval_embedding_corr": compute_embedding_axis_correlation(embeddings),
         "eval_embedding_isoscore": IsoScore(embeddings),
+        "eval_mAP": compute_mean_average_precision(embeddings, example_classes),
     }
 
 

@@ -43,6 +43,7 @@ training_args:
   save_safetensors: false
   label_names:
     - example_idx
+    - example_class
 
 trainer:
   mode: train
