@@ -71,7 +71,7 @@ HYPERPARAMETER_OBJECTIVE_DIRECTION = "maximize"
 def hyperparameter_objective(metrics: dict[str, float]) -> float:
     from pprint import pprint
     pprint(metrics)
-    return metrics["eval_embedding_isoscore"]
+    return metrics["eval_mAP"]
 
 
 def train(config: DictConfig):
