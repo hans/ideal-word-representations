@@ -156,7 +156,7 @@ class ContrastiveEmbeddingHingeObjective(nn.Module):
                 embeddings_class=None,
                 return_soft_negatives=False):
         # torch.autograd.set_detect_anomaly(True)
-        if reduction != "mean":
+        if reduction is not None and reduction != "mean":
             raise NotImplementedError()
 
         pos_sim = F.cosine_similarity(embeddings, pos_embeddings, dim=1)
@@ -179,7 +179,9 @@ class ContrastiveEmbeddingHingeObjective(nn.Module):
         pairwise_sim = pairwise_sim[mask]
 
         loss = self.margin - pairwise_sim
-        loss = F.relu(loss).mean()
+        loss = F.relu(loss)
+        if reduction == "mean":
+            loss = loss.mean()
 
         ### Regularization
 
