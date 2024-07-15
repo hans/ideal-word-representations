@@ -317,6 +317,17 @@ def make_agg_fn_mean_last_k(k):
         ])
     return agg_fn
 
+def make_agg_fn_mean_first_k(k):
+    def agg_fn(xs, *args, **kwargs):
+        nan_onset = np.isnan(xs[:, :, 0]).argmax(axis=1)
+        # if there are no nans, set nan_onset to len
+        nan_onset[~np.isnan(xs[:, :, 0]).any(axis=1)] = xs.shape[1]
+        return np.stack([
+            np.mean(xs[i, 0:min(nan_onset[i],k)], axis=0, keepdims=True)
+            for i in range(xs.shape[0])
+        ])
+    return agg_fn
+
 class AggMeanWithinCut:
     def __init__(self, cut_level: str):
         self.cut_level = cut_level
@@ -368,6 +379,7 @@ TRAJECTORY_AGG_FNS = {k: make_simple_agg_fn(v) for k, v in TRAJECTORY_AGG_FNS.it
 
 TRAJECTORY_META_AGG_FNS: dict[str, Callable] = {
     "mean_last_k": make_agg_fn_mean_last_k,
+    "mean_first_k": make_agg_fn_mean_first_k,
     "mean_within_cut": AggMeanWithinCut,
 }
 
