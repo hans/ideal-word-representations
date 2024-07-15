@@ -22,6 +22,7 @@ wildcard_constraints:
 ALL_MODEL_NOTEBOOKS = [
     "lexical_coherence",
     "lexical_coherence_for_aggregation",
+    "line_search",
     "syllable_coherence",
     "syllable_coherence_by_position",
     "phoneme_coherence",
