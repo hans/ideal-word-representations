@@ -271,6 +271,7 @@ def make_timit_equivalence_dataset(name: str,
                                    minimum_frequency_percentile: float = 0.,
                                    minimum_frequency_count: int = 0,
                                    max_length: Optional[int] = 100,
+                                   start_reference: Optional[str] = None,
                                    num_frames_per_phoneme=None) -> SpeechEquivalenceDataset:
     """
     TIMIT-specific function to prepare an equivalence-classed frame dataset
@@ -360,7 +361,9 @@ def make_timit_equivalence_dataset(name: str,
 
     # Compute start frames.
     S = torch.zeros(len(hidden_states.flat_idxs), dtype=torch.long) - 1
-    start_reference = start_references[equivalence_classer]
+    if start_reference is None:
+        start_reference = start_references[equivalence_classer]
+
     if start_reference == "word":
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
@@ -390,9 +393,11 @@ def make_timit_equivalence_dataset(name: str,
 
                     for j in range(phone_start, phone_end + 1):
                         S[flat_idx_offset + j] = flat_idx_offset + phone_start
-    elif start_reference == "fixed":
-        # TODO magic number: fixed number of frames over which to integrate
-        fixed_length = 20
+    elif start_reference[0] == "fixed":
+        fixed_length = int(start_reference[1])
+        if max_length is not None and fixed_length > max_length:
+            raise ValueError(f"Fixed length {fixed_length} exceeds max length {max_length}")
+
         def compute_start(item, idx):
             flat_idx_offset, flat_idx_end = frames_by_item[idx]
             num_frames = flat_idx_end - flat_idx_offset
@@ -408,7 +413,7 @@ def make_timit_equivalence_dataset(name: str,
                         S[flat_idx_offset + j] = max(flat_idx_offset, flat_idx_offset + j - fixed_length)
     else:
         raise ValueError(f"Unknown start reference {start_reference}")
-    
+
     dataset.map(compute_start, with_indices=True, desc="Computing start frames")
 
     ret = SpeechEquivalenceDataset(name=name,

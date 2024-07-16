@@ -161,7 +161,7 @@ models:
     model: rnn_32-hinge-aniso3
     equivalence: word_broad_10frames
 
-  # timit hinge mAP-maximizing word models
+  # LS hinge mAP-maximizing word models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
     model: rnn_32-hinge-mAP1
@@ -182,6 +182,12 @@ models:
     dataset: librispeech-train-clean-100
     model: rnn_32-hinge-mAP5
     equivalence: word_broad_10frames
+
+  # LS mAP model but with fixed start frame
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge-mAP4
+    equivalence: word_broad_10frames_fixedlen25
 
 encoding:
   data:
