@@ -35,6 +35,8 @@ ALL_MODEL_NOTEBOOKS = [
     "trf",
     "within_word_gradience",
     "word_id",
+
+    "geometry/analogy",
 ]
 
 
@@ -43,7 +45,7 @@ ENCODING_DATASET = "timit-no_repeats"
 
 DEFAULT_PHONEME_EQUIVALENCE = "phoneme_10frames"
 
-FOMO_LIBRARY_PATH = "/userdata/jgauthier/projects/neural-foundation-models"
+FOMO_LIBRARY_PATH = "/userdata/jgauthier/projects/neural-foundation-models:/userdata/jgauthier/projects/neural-foundation-models/data_utils"
 
 
 def select_gpu_device(wildcards, resources):
