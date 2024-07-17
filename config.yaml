@@ -277,6 +277,8 @@ encoding:
 
     - model2: ls-word_broad-hinge-w2v2_8
       model1: baseline
+    - model2: ls-word_broad_fixed-hinge-w2v2_8
+      model1: baseline
 
     # - model2: word_broad-aniso2-w2v2_8
     #   model1: baseline_aud

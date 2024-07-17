@@ -1,0 +1,17 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  ls-word_broad_fixed-hinge-w2v2_8:
+    train_dataset: librispeech-train-clean-100
+    base_model: w2v2_8
+    model: rnn_32-hinge-mAP4
+    equivalence: word_broad_10frames_fixedlen25
+
+    state_space: word
+    featurization: mean
+    permute: null
