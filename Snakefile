@@ -632,7 +632,7 @@ rule estimate_encoder_unique_variance:
         output_dir = Path(output.unique_variance).parent
 
         shell("""
-        export PYTHONPATH=`pwd`
+        export PYTHONPATH="`pwd`:{FOMO_LIBRARY_PATH}"
         papermill --log-output \
             {input.notebook} {output.notebook} \
             -p encoder_path {input.encoder} \
