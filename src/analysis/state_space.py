@@ -5,7 +5,7 @@ State space analysis tools for integrator models.
 from copy import deepcopy
 from functools import cached_property, wraps
 from dataclasses import dataclass
-from typing import Optional, Union, Any, Callable, Iterable
+from typing import Literal, Optional, Union, Any, Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -332,7 +332,7 @@ class AggMeanWithinCut:
     def __init__(self, cut_level: str):
         self.cut_level = cut_level
     def __call__(self, trajectory_i: np.ndarray, state_space_spec: StateSpaceAnalysisSpec,
-                 label_idx: int, pad: Union[str, float] = "last") -> np.ndarray:
+                 label_idx: int, pad: Union[Literal["last"], float] = np.nan) -> np.ndarray:
         if state_space_spec.cuts is None:
             raise ValueError("No cuts available to aggregate within")
         
