@@ -34,6 +34,7 @@ ALL_MODEL_NOTEBOOKS = [
     "state_space",
     "trf",
     "within_word_gradience",
+    "word_discrimination",
     "word_id",
 
     "geometry/analogy",
