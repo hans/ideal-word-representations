@@ -100,26 +100,6 @@ models:
     model: randomff_32
     equivalence: random
 
-  # no repeats
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-aniso2
-    equivalence: word_broad_10frames
-
-  # librispeech word models
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-aniso1
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-aniso2
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-aniso3
-    equivalence: word_broad_10frames
-
   # librispeech other models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
