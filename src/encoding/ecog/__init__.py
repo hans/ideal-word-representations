@@ -268,8 +268,6 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             # All epochs should have same number of channels
             assert data_i.shape[0] == data_0.shape[0]
 
-    assert not (return_df and return_pl), "Can only return one of DataFrame or Polars DataFrame"
-
     epochs, epoch_info = [], []
     state_space = aligned_dataset._snapshot.all_state_spaces[state_space_name]
 
