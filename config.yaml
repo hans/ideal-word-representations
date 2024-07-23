@@ -6,99 +6,6 @@ datasets:
 
 
 models:
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_3-weightdecay0.01
-    equivalence: phoneme_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: syllable_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_3-weightdecay0.01
-    equivalence: next_phoneme_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: word_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: word_broad_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: biphone_recon_10frames
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: biphone_pred_10frames
-
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_3-weightdecay0.01
-    equivalence: phoneme_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: syllable_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_3-weightdecay0.01
-    equivalence: next_phoneme_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: word_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: biphone_recon_10frames
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: rnn_8-weightdecay0.01
-    equivalence: biphone_pred_10frames
-
-  # random LSTM models
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: randomrnn_8
-    equivalence: random
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: randomrnn_32
-    equivalence: random
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: randomrnn_8
-    equivalence: random
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: randomrnn_32
-    equivalence: random
-
-  # random feedforward models
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: randomff_8
-    equivalence: random
-  - base_model: w2v2_6
-    dataset: timit-no_repeats
-    model: randomff_32
-    equivalence: random
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: randomff_8
-    equivalence: random
-  - base_model: w2v2_8
-    dataset: timit-no_repeats
-    model: randomff_32
-    equivalence: random
 
   # librispeech other models
   - base_model: w2v2_8
@@ -128,26 +35,10 @@ models:
     equivalence: random
 
   # LS hinge mAP-maximizing word models
-  # - base_model: w2v2_8
-  #   dataset: librispeech-train-clean-100
-  #   model: rnn_32-hinge-mAP1
-  #   equivalence: word_broad_10frames
-  # - base_model: w2v2_8
-  #   dataset: librispeech-train-clean-100
-  #   model: rnn_32-hinge-mAP2
-  #   equivalence: word_broad_10frames
-  # - base_model: w2v2_8
-  #   dataset: librispeech-train-clean-100
-  #   model: rnn_32-hinge-mAP3
-  #   equivalence: word_broad_10frames
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
     model: rnn_32-hinge-mAP4
     equivalence: word_broad_10frames
-  # - base_model: w2v2_8
-  #   dataset: librispeech-train-clean-100
-  #   model: rnn_32-hinge-mAP5
-  #   equivalence: word_broad_10frames
 
   # LS mAP model but with fixed start frame
   - base_model: w2v2_8
