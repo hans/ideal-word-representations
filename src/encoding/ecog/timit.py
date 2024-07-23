@@ -188,6 +188,17 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
 
     aligned_dataset = AlignedECoGDataset(model, out)
 
+    # normalize across whole embedding set (not just those used in the encoding evaluation)
+    embedding_normalization = getattr(feature_spec, "normalization", None)
+    if embedding_normalization == "zscore":
+        model.embeddings = (model.embeddings - model.embeddings.mean(axis=0)) / model.embeddings.std(axis=0)
+    elif embedding_normalization == "minmax":
+        model.embeddings = (model.embeddings - model.embeddings.min(axis=0)) / (model.embeddings.max(axis=0) - model.embeddings.min(axis=0))
+    elif embedding_normalization == "l2norm":
+        model.embeddings = model.embeddings / np.linalg.norm(model.embeddings, axis=1, keepdims=True)
+    elif embedding_normalization is not None:
+        raise ValueError(f"Unknown normalization {embedding_normalization}")
+
     # Scatter model embeddings into a time series aligned with ECoG data.
     n_model_dims = model.embeddings.shape[1]
     embedding_scatter_samples, embedding_scatter_data = [], []
