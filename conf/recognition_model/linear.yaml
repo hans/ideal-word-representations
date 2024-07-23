@@ -1,0 +1,17 @@
+embeddings:
+  featurization: ['mean_within_cut', 'phoneme']
+
+model:
+  type: linear
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 1e-3
+
+evaluation:
+  keep_top_k: 2000
+  subsample_instances: 50
+
+  num_train_epochs: 2
+  train_batch_size: 64
+  eval_batch_size: 64

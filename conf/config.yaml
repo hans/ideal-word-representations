@@ -4,6 +4,7 @@ defaults:
   - equivalence: phoneme
   - base_model: w2v2_6
   - model: rnn_8
+  - recognition_model: linear
 
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog

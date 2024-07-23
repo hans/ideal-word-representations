@@ -260,7 +260,7 @@ def prepare_state_trajectory(
         embeddings: np.ndarray,
         spec: StateSpaceAnalysisSpec,
         expand_window: Optional[tuple[int, int]] = None,
-        pad="last",
+        pad: Union[str, float] = "last",
 ) -> list[np.ndarray]:
     """
     Prepare the state trajectory for the given dataset and model embeddings.
@@ -400,7 +400,7 @@ def aggregate_state_trajectory(trajectory: list[np.ndarray],
     ret = [agg_fn(traj, state_space_spec=state_space_spec,
                   label_idx=idx)
            for idx, traj in enumerate(tqdm(trajectory, unit="label", desc="Aggregating", leave=False))]
-    if not keepdims:
+    if not keepdims and ret[0].shape[1] == 1:
         ret = [traj.squeeze(1) for traj in ret]
 
     return ret
