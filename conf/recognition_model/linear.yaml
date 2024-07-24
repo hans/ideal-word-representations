@@ -5,13 +5,14 @@ model:
   type: linear
 
 optimizer:
-  _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 1e-1
 
 evaluation:
-  keep_top_k: 2000
+  keep_top_k: 20000
   subsample_instances: 50
 
-  num_train_epochs: 2
-  train_batch_size: 64
-  eval_batch_size: 64
+  num_stratified_splits: 3
+
+  num_train_epochs: 50
+  train_batch_size: 256
+  eval_batch_size: 256

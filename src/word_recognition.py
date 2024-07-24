@@ -3,14 +3,21 @@ Defines methods for training and evaluating word recognition
 classifiers on model embeddings.
 """
 
+from dataclasses import dataclass
 import logging
+from pathlib import Path
 
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+import pandas as pd
+from sklearn.model_selection import StratifiedKFold
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import Dataset, random_split
+import transformers
+from tqdm.auto import tqdm
 
 from src.analysis import state_space as ss
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset
@@ -25,7 +32,7 @@ def prepare_trajectories(embeddings, state_space_spec, config):
     
     # aggregate the trajectory
     featurization = getattr(config.embeddings, "featurization", None)
-    if False:  # featurization is not None:  # DEV
+    if featurization is not None:
         trajectory = ss.aggregate_state_trajectory(
             trajectory, state_space_spec, tuple(featurization)
         )
@@ -36,63 +43,193 @@ def prepare_trajectories(embeddings, state_space_spec, config):
     flat_trajs_by_frame = []
     for frame in range(max_num_frames):
         mask = flat_traj_src[:, 2] == frame
-        flat_trajs_by_frame.append((flat_traj[mask], flat_traj_src[mask]))
+        flat_trajs_by_frame.append((flat_traj[mask], flat_traj_src[mask, 0], flat_traj_src[mask, 1]))
 
     return flat_trajs_by_frame
 
 
+class MyDataset(Dataset):
+    def __init__(self, idxs, embeddings, labels, label_instance_idxs):
+        self.idxs = idxs
+        self.embeddings = embeddings
+        self.labels = labels
+        self.label_instance_idxs = label_instance_idxs
+
+    def __len__(self):
+        return len(self.embeddings)
+
+    def __getitem__(self, idx):
+        return {"idxs": self.idxs[idx],
+                "inputs": self.embeddings[idx],
+                "labels": self.labels[idx],
+                "label_instance_idxs": self.label_instance_idxs[idx]}
+    
+
+@dataclass
+class MyModelOutput(transformers.utils.ModelOutput):
+    loss: torch.Tensor = None
+    logits: torch.Tensor = None
+    
+
+class MyModel(nn.Module):
+    def __init__(self, input_dim, num_labels):
+        super().__init__()
+        self.fc = nn.Linear(input_dim, num_labels)
+
+    def forward(self, inputs, labels=None, **kwargs):
+        logits = self.fc(inputs)
+
+        loss = None
+        if labels is not None:
+            loss = nn.CrossEntropyLoss()(logits, labels)
+        
+        return MyModelOutput(
+            loss=loss,
+            logits=logits
+        )
+
+
+def prepare_dataset(embeddings, labels, label_instance_idxs,
+                    num_splits=5) -> list[tuple[Dataset, Dataset]]:
+    assert embeddings.shape[0] == labels.shape[0] == label_instance_idxs.shape[0]
+
+    # l2 norm
+    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+
+    # do stratified k-fold split
+    skf = StratifiedKFold(n_splits=num_splits, shuffle=True, random_state=42)
+    datasets = []
+    for train_idx, eval_idx in skf.split(embeddings, labels):
+        train_embeddings, train_labels, train_label_instance_idxs = \
+            embeddings[train_idx], labels[train_idx], label_instance_idxs[train_idx]
+        eval_embeddings, eval_labels, eval_label_instance_idxs = \
+            embeddings[eval_idx], labels[eval_idx], label_instance_idxs[eval_idx]
+
+        datasets.append((MyDataset(torch.tensor(train_idx).long(),
+                                   torch.tensor(train_embeddings).float(),
+                                   torch.tensor(train_labels).long(),
+                                   torch.tensor(train_label_instance_idxs).long()),
+                         MyDataset(torch.tensor(eval_idx).long(),
+                                   torch.tensor(eval_embeddings).float(),
+                                   torch.tensor(eval_labels).long(),
+                                   torch.tensor(eval_label_instance_idxs).long())))
+
+    return datasets
+
+
+def compute_metrics(p: transformers.EvalPrediction):
+    labels, idxs, instance_idxs = p.label_ids
+    preds = np.argmax(p.predictions, axis=1)
+    return {"accuracy": (preds == labels).mean()}
+
+
 def train(config: DictConfig):
-    if config.device == "cuda":
+    if config["device"] == "cuda":
         if not torch.cuda.is_available():
             L.error("CUDA is not available. Falling back to CPU.")
-            config.device = "cpu"
-
-    recognition_config = config.recognition_model
+            config["device"] = "cpu"
 
     hidden_states = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
     state_space_spec: ss.StateSpaceAnalysisSpec = torch.load(config.analysis.state_space_specs_path)["word"]
     assert state_space_spec.is_compatible_with(hidden_states)
     embeddings = np.load(config.model.embeddings_path)
 
-    trajectories = prepare_trajectories(embeddings, state_space_spec, recognition_config)
+    # Subsample state space according to config
+    L.info(f"Keeping top {config.recognition_model.evaluation.keep_top_k} labels (out of {len(state_space_spec.labels)})")
+    state_space_spec = state_space_spec.keep_top_k(config.recognition_model.evaluation.keep_top_k)
+    state_space_spec = state_space_spec.subsample_instances(config.recognition_model.evaluation.subsample_instances)
 
-    # DEV just work on the first
-    flat_traj, flat_traj_src = trajectories[0]
+    trajectories = prepare_trajectories(embeddings, state_space_spec, config.recognition_model)
+    datasets = {
+        frame_idx: prepare_dataset(*traj, num_splits=config.recognition_model.evaluation.num_stratified_splits)
+        for frame_idx, traj in enumerate(trajectories)
+    }
+    all_labels = state_space_spec.labels
 
-    label2idx = {label: idx for idx, label in enumerate(np.unique(flat_traj_src[:, 0]))}
-    num_words = len(label2idx)
+    device = torch.device(config.device)
+    def make_model():
+        return MyModel(embeddings.shape[1], len(all_labels)).to(device)
 
-    flat_traj = torch.tensor(flat_traj, dtype=torch.float)
-    labels = torch.tensor(flat_traj_src[:, 0]).long()
-    dataset = TensorDataset(flat_traj, labels)
-    train_dataset, eval_dataset = random_split(
-        dataset, [int(len(dataset) * 0.8), len(dataset) - int(len(dataset) * 0.8)])
+    # Overrides -- hacky because we're pulling a config from the main model config
+    config.training_args.per_device_train_batch_size = config.recognition_model.evaluation.train_batch_size
+    config.training_args.num_train_epochs = config.recognition_model.evaluation.num_train_epochs
+    config.training_args.label_names = ["labels", "idxs", "label_instance_idxs"]
+    config.training_args.learning_rate = config.recognition_model.optimizer.lr
+
+    training_args = transformers.TrainingArguments(
+        use_cpu=config.device == "cpu",
+        output_dir=HydraConfig.get().runtime.output_dir,
+        logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
+        per_device_eval_batch_size=config.recognition_model.evaluation.eval_batch_size,
+        eval_accumulation_steps=5,
+        # max_steps=max_training_steps,
+        **OmegaConf.to_object(config.training_args))
     
-    train_loader = DataLoader(train_dataset,
-                              batch_size=recognition_config.evaluation.train_batch_size,
-                              shuffle=True)
-    eval_loader = DataLoader(eval_dataset,
-                             batch_size=recognition_config.evaluation.eval_batch_size,
-                             shuffle=False)
+    callbacks = []
+    if "callbacks" in config.trainer:
+        callbacks = [instantiate(c) for c in config.trainer.callbacks]
+    trainer_config = dict(config.trainer)
+    trainer_config.pop("callbacks", None)
+    trainer_mode = trainer_config.pop("mode", "train")
+    hparam_config = trainer_config.pop("hyperparameter_search", None)
 
-    model = nn.Linear(flat_traj.shape[1], num_words)
-    model.to(config.device)
+    output_dir = Path(HydraConfig.get().runtime.output_dir)
+    for frame_idx, datasets in tqdm(datasets.items(), unit="frame"):
+        all_test_evaluations, all_test_predictions = [], []
+        for split_idx, (train_dataset, test_dataset) in enumerate(datasets):
+            model = make_model()
+            model_dir = output_dir / f"frame_{frame_idx}-split_{split_idx}"
+            training_args.output_dir = str(model_dir)
+            training_args.logging_dir = str(model_dir / "logs")
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = instantiate(recognition_config.optimizer, model.parameters())
+            # create a validation dataset from 10% of the training dataset
+            train_dataset, eval_dataset = random_split(
+                train_dataset, [len(train_dataset) - len(train_dataset) // 10,
+                                len(train_dataset) // 10])
 
-    for epoch in range(recognition_config.evaluation.num_train_epochs):
-        for i, batch in enumerate(train_loader):
-            model.train()
-            optimizer.zero_grad()
+            trainer = transformers.Trainer(
+                args=training_args,
+                model=model,
+                callbacks=callbacks,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                compute_metrics=compute_metrics,
+                **trainer_config)
+    
+            trainer.train()
 
-            batch = [b.to(config.device) for b in batch]
-            x, y = batch
-            y_pred = model(x)
-            loss = criterion(y_pred, y)
-            
-            if i % 100 == 0:
-                print(i, loss.item())
+            all_test_evaluations.append(trainer.evaluate(test_dataset))
 
-            loss.backward()
-            optimizer.step()
+            test_output = trainer.predict(test_dataset)
+            all_test_predictions.append(
+                (test_output.predictions.argmax(axis=1),  # predicted class
+                 test_output.label_ids[0],  # classes
+                 test_output.label_ids[1],  # example idxs
+                 test_output.label_ids[2],  # label instance idxs
+                 ))
+
+        all_test_preds, all_test_labels, all_test_idxs, all_test_instance_label_idxs = \
+            zip(*all_test_predictions)
+        all_test_preds = np.concatenate(all_test_preds)
+        all_test_labels = np.concatenate(all_test_labels)
+        all_test_idxs = np.concatenate(all_test_idxs)
+        all_test_instance_label_idxs = np.concatenate(all_test_instance_label_idxs)
+
+        # reorder to original order
+        perm_idxs = np.argsort(all_test_idxs)
+        all_test_preds = all_test_preds[perm_idxs]
+        all_test_labels = all_test_labels[perm_idxs]
+        all_test_idxs = all_test_idxs[perm_idxs]
+        all_test_instance_label_idxs = all_test_instance_label_idxs[perm_idxs]
+        assert np.all(all_test_idxs == np.arange(len(all_test_idxs)))
+
+        predictions_df = pd.DataFrame({
+            "example_idx": all_test_idxs,
+            "label_instance_idx": all_test_instance_label_idxs,
+            "label_idx": all_test_labels,
+            "predicted_label_idx": all_test_preds,
+        })
+        predictions_df["label"] = predictions_df.label_idx.map(dict(enumerate(all_labels)))
+        predictions_df["predicted_label"] = predictions_df.predicted_label_idx.map(dict(enumerate(all_labels)))
+        predictions_df["correct"] = predictions_df.label_idx == predictions_df.predicted_label_idx
+        predictions_df.to_csv(output_dir / f"predictions-frame_{frame_idx}.csv", index=False)

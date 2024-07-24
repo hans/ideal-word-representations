@@ -405,6 +405,46 @@ rule run_all_notebooks:
                 model_spec=MODEL_SPEC_LIST, notebook=ALL_MODEL_NOTEBOOKS)
 
 
+rule evaluate_word_recognition:
+    input:
+        model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{target_dataset}.h5",
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{target_dataset}.npy",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
+
+        model_config = "conf/recognition_model/{recognition_model}.yaml"
+
+    resources:
+        gpu = 1
+
+    output:
+        trace = directory("outputs/word_recognition/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{target_dataset}/{recognition_model}"),
+
+    run:
+        gpu_device = 1  # HACK select_gpu_device(wildcards, resources)
+
+        shell("""
+        export PYTHONPATH=`pwd`
+        export HDF5_USE_FILE_LOCKING=FALSE
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        python word_recognition.py \
+            hydra.run.dir={output.trace} \
+            recognition_model={wildcards.recognition_model} \
+            model={wildcards.model_name} \
+            +model.output_dir={input.model_dir} \
+            +model.embeddings_path={input.embeddings} \
+            base_model={wildcards.base_model_name} \
+            +base_model.hidden_state_path={input.hidden_states} \
+            +analysis.state_space_specs_path={input.state_space_specs} \
+        """)
+
+
+rule run_all_word_recognition:
+    input:
+        expand("outputs/word_recognition/{model_spec}/librispeech-train-clean-100/linear",
+                model_spec=MODEL_SPEC_LIST)
+
+
 def _get_inputs_for_encoding(feature_set: str, encoding_dataset: str, return_list=False) -> list[str]:
     """
     Args:
