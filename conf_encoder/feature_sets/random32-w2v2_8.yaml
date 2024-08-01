@@ -1,0 +1,16 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  random32-w2v2_8:
+    base_model: w2v2_8
+    model: randomrnn_32
+    equivalence: random
+
+    state_space: phoneme
+    featurization: mean
+    permute: null
