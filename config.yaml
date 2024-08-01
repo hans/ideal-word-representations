@@ -34,6 +34,28 @@ models:
     model: randomff_32
     equivalence: random
 
+  # LS hinge mAP-maximizing phoneme models
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge_ph-mAP1
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge_ph-mAP2
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge_ph-mAP3
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge_ph-mAP4
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: rnn_32-hinge_ph-mAP5
+    equivalence: phoneme_10frames
+
   # LS hinge mAP-maximizing word models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
@@ -120,7 +142,9 @@ encoding:
       model1: baseline
     - model2: syllable
       model1: baseline
-    - model2: random8
+    - model2: random8-w2v2_8
+      model1: baseline
+    - model2: random32-w2v2_8
       model1: baseline
 
     - model2: ls-word_broad-hinge-w2v2_8
