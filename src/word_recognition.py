@@ -175,7 +175,7 @@ def train(config: DictConfig):
 
     output_dir = Path(HydraConfig.get().runtime.output_dir)
     for frame_idx, datasets in tqdm(datasets.items(), unit="frame"):
-        all_test_evaluations, all_test_predictions = [], []
+        all_test_evaluations, all_test_outputs = [], []
         for split_idx, (train_dataset, test_dataset) in enumerate(datasets):
             model = make_model()
             model_dir = output_dir / f"frame_{frame_idx}-split_{split_idx}"
@@ -201,34 +201,31 @@ def train(config: DictConfig):
             all_test_evaluations.append(trainer.evaluate(test_dataset))
 
             test_output = trainer.predict(test_dataset)
-            all_test_predictions.append(
-                (test_output.predictions.argmax(axis=1),  # predicted class
-                 test_output.label_ids[0],  # classes
-                 test_output.label_ids[1],  # example idxs
-                 test_output.label_ids[2],  # label instance idxs
-                 ))
+            model_logits: np.ndarray = test_output.predictions
+            predicted_label_idx = model_logits.argmax(axis=1)
 
-        all_test_preds, all_test_labels, all_test_idxs, all_test_instance_label_idxs = \
-            zip(*all_test_predictions)
-        all_test_preds = np.concatenate(all_test_preds)
-        all_test_labels = np.concatenate(all_test_labels)
-        all_test_idxs = np.concatenate(all_test_idxs)
-        all_test_instance_label_idxs = np.concatenate(all_test_instance_label_idxs)
+            model_probabilities = torch.nn.functional.softmax(torch.tensor(model_logits), dim=1).numpy()
+            model_entropy = -np.sum(model_probabilities * np.log(model_probabilities), axis=1)
+            # probability of top label
+            predicted_probability = model_probabilities[np.arange(model_probabilities.shape[0]), predicted_label_idx]
+            # probability of GT label
+            gt_label_probability = model_probabilities[np.arange(model_probabilities.shape[0]), test_output.label_ids[0]]
 
-        # reorder to original order
-        perm_idxs = np.argsort(all_test_idxs)
-        all_test_preds = all_test_preds[perm_idxs]
-        all_test_labels = all_test_labels[perm_idxs]
-        all_test_idxs = all_test_idxs[perm_idxs]
-        all_test_instance_label_idxs = all_test_instance_label_idxs[perm_idxs]
-        assert np.all(all_test_idxs == np.arange(len(all_test_idxs)))
+            all_test_outputs.append({
+                "predicted_label_idx": predicted_label_idx,
+                "predicted_probability": predicted_probability,
 
-        predictions_df = pd.DataFrame({
-            "example_idx": all_test_idxs,
-            "label_instance_idx": all_test_instance_label_idxs,
-            "label_idx": all_test_labels,
-            "predicted_label_idx": all_test_preds,
-        })
+                "gt_label_probability": gt_label_probability,
+
+                "entropy": model_entropy,
+
+                "label_idx": test_output.label_ids[0],
+                "label_instance_idx": test_output.label_ids[2],
+                "example_idx": test_output.label_ids[1],
+            })
+
+        predictions_df = pd.concat([pd.DataFrame(e) for e in all_test_outputs], ignore_index=True) \
+            .sort_values("example_idx")
         predictions_df["label"] = predictions_df.label_idx.map(dict(enumerate(all_labels)))
         predictions_df["predicted_label"] = predictions_df.predicted_label_idx.map(dict(enumerate(all_labels)))
         predictions_df["correct"] = predictions_df.label_idx == predictions_df.predicted_label_idx
