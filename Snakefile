@@ -421,7 +421,7 @@ rule evaluate_word_recognition:
         trace = directory("outputs/word_recognition/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{target_dataset}/{recognition_model}"),
 
     run:
-        gpu_device = 1  # HACK select_gpu_device(wildcards, resources)
+        gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""
         export PYTHONPATH=`pwd`
