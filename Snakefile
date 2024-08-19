@@ -39,6 +39,7 @@ ALL_MODEL_NOTEBOOKS = [
     "word_id",
 
     "geometry/analogy",
+    "geometry/analogy_dynamic",
 ]
 
 
