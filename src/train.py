@@ -66,6 +66,13 @@ def hyperparameter_space_hinge(trial):
         "hidden_dim": tune.choice([32, 64, 128, 256]),
     }
 
+def hyperparameter_space_classification(trial):
+    return {
+        "learning_rate": tune.loguniform(1e-5, 1e-1),
+        "weight_decay": tune.loguniform(1e-5, 1e-1),
+        "hidden_dim": tune.choice([32, 64, 128, 256]),
+    }
+
 
 HYPERPARAMETER_OBJECTIVE_DIRECTION = "maximize"
 def hyperparameter_objective(metrics: dict[str, float]) -> float:
@@ -111,6 +118,7 @@ def train(config: DictConfig):
 
     model_config = integrator.ContrastiveEmbeddingModelConfig(
         equivalence_classer=config.equivalence.equivalence_classer,
+        num_classes=len(equiv_dataset.class_labels),
         max_length=max_length,
         input_dim=hidden_state_dataset.hidden_size,
         **OmegaConf.to_object(config.model))
@@ -159,6 +167,8 @@ def train(config: DictConfig):
         hp_space = hyperparameter_space
         if loss_form == "hinge":
             hp_space = hyperparameter_space_hinge
+        elif loss_form == "classification":
+            hp_space = hyperparameter_space_classification
 
         trainer.hyperparameter_search(
             direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
@@ -166,7 +176,7 @@ def train(config: DictConfig):
             n_trials=hparam_config.n_trials,
             hp_space=hp_space,
             compute_objective=hyperparameter_objective,
-            resources_per_trial={"gpu": 0.24, "cpu": 1},
+            resources_per_trial={"gpu": 0.19, "cpu": 1},
             scheduler=instantiate(hparam_config.scheduler,
                                   mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
         )

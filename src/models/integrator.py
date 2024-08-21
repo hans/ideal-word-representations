@@ -215,7 +215,35 @@ class ContrastiveEmbeddingHingeObjective(nn.Module):
         return loss
 
 
-ContrastiveLossSpec: TypeAlias = Literal["ratio", "hinge"]
+class ContrastiveEmbeddingClassificationObjective(nn.Module):
+    """
+    Shim for a discriminative classification model in this contrastive learning framework
+    """
+    # TODO redundancy with ContrastiveEmbeddingObjective
+    def __init__(self, regularization=None, **kwargs):
+        super(ContrastiveEmbeddingClassificationObjective, self).__init__()
+
+        if regularization is not None:
+            raise NotImplementedError()
+
+    def forward(self, embeddings, _pos, _neg,
+                reduction="mean", embeddings_class=None, **kwargs):
+        if reduction is not None and reduction != "mean":
+            raise NotImplementedError()
+        
+        assert embeddings_class is not None
+
+        assert embeddings.shape[0] == embeddings_class.shape[0]
+        assert embeddings_class.max() < embeddings.shape[1]
+
+        loss = F.cross_entropy(embeddings, embeddings_class)
+        if reduction == "mean":
+            loss = loss.mean()
+
+        return loss
+
+
+ContrastiveLossSpec: TypeAlias = Literal["ratio", "hinge", "classification"]
 
 
 @dataclass
@@ -225,6 +253,7 @@ class ContrastiveEmbeddingModelConfig(PretrainedConfig):
 
     # equivalence-classing config
     equivalence_classer: str = "phoneme_within_word_prefix"
+    num_classes: int = 5
 
     # NN config
     max_length: int = 20
@@ -283,6 +312,15 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         if self.config.regularization == "spectral_norm":
             # Register spectral norm parameterization on RNN output layer.
             self.rnn.fc = spectral_norm(self.rnn.fc)
+
+        self.fc = None
+        if self.config.loss_form == "classification":
+            self.fc = nn.Linear(config.output_dim, config.num_classes)
+
+    def __setstate__(self, state):
+        if "fc" not in state:
+            state["fc"] = None
+        super().__setstate__(state)
         
     def is_compatible_with(self, dataset: SpeechHiddenStateDataset):
         return self.config.is_compatible_with(dataset)
@@ -293,14 +331,22 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                 return_loss=True, return_embeddings=True,
                 in_batch_soft_negatives=None,
                 **kwargs):
+        if self.config.loss_form == "classification":
+            if in_batch_soft_negatives:
+                raise ValueError("Cannot use in_batch_soft_negatives with classification loss")
+        else:
+            if neg is None and not in_batch_soft_negatives:
+                raise ValueError("Must provide negative examples if not using in_batch_soft_negatives")
+
         embeddings, pos_embeddings, neg_embeddings = self.compute_batch_embeddings(
             example, example_length, pos, pos_length, neg, neg_length)
         
-        in_batch_soft_negatives = in_batch_soft_negatives if in_batch_soft_negatives is not None \
-            else self.config.in_batch_soft_negatives
+        if self.fc is not None:
+            embeddings = self.fc(embeddings)
         
-        if neg is None and not in_batch_soft_negatives:
-            raise ValueError("Must provide negative examples if not using in_batch_soft_negatives")
+        in_batch_soft_negatives = (self.config.loss_form != "classification") \
+            and (in_batch_soft_negatives if in_batch_soft_negatives is not None
+                 else self.config.in_batch_soft_negatives)
 
         loss_kwargs = dict(batch_soft_negatives=in_batch_soft_negatives,
                            regularization=self.config.regularization)
@@ -310,6 +356,9 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         elif self.config.loss_form == "hinge":
             loss_fn = ContrastiveEmbeddingHingeObjective(
                 margin=self.config.margin, **loss_kwargs)
+        elif self.config.loss_form == "classification":
+            loss_fn = ContrastiveEmbeddingClassificationObjective(
+                **loss_kwargs)
         else:
             raise ValueError(f"Unknown loss form {self.config.loss_form}")
 
@@ -350,6 +399,7 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
             soft_neg_embeddings, mask, pairwise_sim = loss_ret[1]
         else:
             loss = loss_ret
+            soft_neg_embeddings, mask, pairwise_sim = None, None, None
 
         if not return_embeddings:
             return ContrastiveEmbeddingModelOutput(loss=loss)
@@ -696,7 +746,17 @@ def compute_metrics_hinge(p: EvalPrediction, model_config: ContrastiveEmbeddingM
     }
 
 
+def compute_metrics_classification(p: EvalPrediction, model_config: ContrastiveEmbeddingModelConfig):
+    example_idx, example_class = p.label_ids
+    logits, embeddings = p.predictions
+    preds = np.argmax(logits, axis=1)
+    return {
+        "accuracy": (preds == example_class).mean()
+    }
+
+
 COMPUTE_METRICS: dict[ContrastiveLossSpec, Callable[[EvalPrediction, ContrastiveEmbeddingModelConfig], dict]] = {
     "ratio": compute_metrics,
     "hinge": compute_metrics_hinge,
+    "classification": compute_metrics_classification,
 }
