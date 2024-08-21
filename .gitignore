@@ -1,4 +1,6 @@
 *.csv
+*.png
+*.zip
 *.pt
 data
 __pycache__
