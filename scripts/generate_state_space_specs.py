@@ -283,8 +283,8 @@ def main(config: DictConfig):
         assert not set(new_specs.keys()) & set(all_state_space_specs.keys())
         all_state_space_specs.update(new_specs)
 
-    with open(config.analysis.state_space_specs_path, "wb") as f:
-        torch.save(all_state_space_specs, f)    
+    for name, spec in all_state_space_specs.items():
+        spec.to_hdf5(config.analysis.state_space_specs_path, key=name)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from functools import cached_property, wraps
 from dataclasses import dataclass
 from typing import Literal, Optional, Union, Any, Callable, Iterable
 
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -44,6 +45,7 @@ class StateSpaceAnalysisSpec:
         if self.cuts is not None:
             assert self.cuts.index.names == ["label", "instance_idx", "level"]
             assert set(self.cuts.columns) >= {"description", "onset_frame_idx", "offset_frame_idx"}
+
             assert set(self.cuts.index.get_level_values("label")) <= set(self.labels)
 
             assert (self.cuts.onset_frame_idx < self.total_num_frames).all()
@@ -54,6 +56,54 @@ class StateSpaceAnalysisSpec:
                                            left_index=True, right_on=["label", "instance_idx"])
             assert (cuts_validity_check.onset_frame_idx >= cuts_validity_check.start_frame).all()
             assert (cuts_validity_check.offset_frame_idx <= cuts_validity_check.end_frame).all()
+
+    def to_hdf5(self, path: str, key=None):
+        with h5py.File(path, "w") as f:
+            group = f
+            if key is not None:
+                group = f.create_group(key)
+
+            group.attrs["total_num_frames"] = self.total_num_frames
+            group["labels"] = [label.encode("utf-8") for label in self.labels]
+
+            # flatten target_frame_spans, retaining original indices
+            target_frame_spans = np.concatenate([np.array(spans_i) for spans_i in self.target_frame_spans])
+            target_frame_span_boundaries = np.cumsum([len(spans_i) for spans_i in self.target_frame_spans])
+            group.create_dataset("target_frame_spans", data=target_frame_spans)
+            group.create_dataset("target_frame_span_boundaries", data=target_frame_span_boundaries)
+
+        if self.cuts is not None:
+            cuts_key = "cuts" if key is None else f"{key}/cuts"
+            self.cuts.to_hdf(path, key="cuts", mode="a")
+
+    @classmethod
+    def from_hdf5(cls, path: str, key=None):
+        with h5py.File(path, "r") as f:
+            group = f
+            if key is not None:
+                group = f[key]
+
+            total_num_frames = group.attrs["total_num_frames"]
+            labels = [label.decode("utf-8") for label in group["labels"]]
+
+            target_frame_spans = group["target_frame_spans"][()]
+            target_frame_span_boundaries = group["target_frame_span_boundaries"][()]
+            target_frame_spans = np.split(target_frame_spans, target_frame_span_boundaries[:-1])
+
+            has_cuts = "cuts" in group
+
+        cuts = None
+        if has_cuts:
+            cuts = pd.read_hdf(path, key="cuts" if key is None else f"{key}/cuts")
+
+            # `nan` will get re-coded as np.nan; fix this
+            cuts = cuts.reset_index("label")
+            cuts["label"] = cuts.label.fillna("nan")
+            cuts = cuts.set_index("label", append=True)
+            cuts = cuts.reorder_levels(["label", "instance_idx", "level"])
+
+        return cls(total_num_frames=total_num_frames, labels=labels,
+                    target_frame_spans=target_frame_spans, cuts=cuts)
 
     @property
     def target_frame_spans_df(self) -> pd.DataFrame:

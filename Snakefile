@@ -343,7 +343,7 @@ rule compute_state_spaces:
         hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5"
 
     output:
-        "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl"
+        "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.h5"
 
     run:
         outdir = Path(output[0]).parent
@@ -376,7 +376,7 @@ rule run_notebook:
         word_equivalence_dataset = f"outputs/equivalence_datasets/{{dataset}}/{{base_model_name}}/{NOTEBOOK_WORD_EQUIVALENCE}/equivalence.pkl",
 
         hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
-        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.h5",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}.npy"
 
     output:
@@ -411,7 +411,7 @@ rule evaluate_word_recognition:
         model_dir = "outputs/models/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}",
         hidden_states = "outputs/hidden_states/{base_model_name}/{target_dataset}.h5",
         embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{target_dataset}.npy",
-        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.pkl",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.h5",
 
         model_config = "conf/recognition_model/{recognition_model}.yaml"
 
@@ -467,7 +467,7 @@ def _get_inputs_for_encoding(feature_set: str, encoding_dataset: str, return_lis
             "hidden_states": f"outputs/hidden_states/{feature_set['base_model']}/{encoding_dataset}.h5",
             "equivalence": _get_equivalence_dataset(encoding_dataset, feature_set['base_model'], feature_set['equivalence']),
             "embeddings": f"outputs/model_embeddings/{train_dataset}/{feature_set['base_model']}/{feature_set['model']}/{feature_set['equivalence']}/{encoding_dataset}.npy",
-            "state_space": f"outputs/state_space_specs/{encoding_dataset}/{feature_set['base_model']}/state_space_specs.pkl"
+            "state_space": f"outputs/state_space_specs/{encoding_dataset}/{feature_set['base_model']}/state_space_specs.h5"
         }
 
     # restructure to return a list of paths for each type of input
