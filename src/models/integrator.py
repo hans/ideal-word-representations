@@ -751,7 +751,8 @@ def compute_metrics_classification(p: EvalPrediction, model_config: ContrastiveE
     logits, embeddings = p.predictions
     preds = np.argmax(logits, axis=1)
     return {
-        "accuracy": (preds == example_class).mean()
+        "eval_accuracy": (preds == example_class).mean(),
+        "eval_mAP": compute_mean_average_precision(embeddings, example_class),
     }
 
 
