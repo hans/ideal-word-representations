@@ -331,6 +331,10 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
                 return_loss=True, return_embeddings=True,
                 in_batch_soft_negatives=None,
                 **kwargs):
+        in_batch_soft_negatives = (self.config.loss_form != "classification") \
+            and (in_batch_soft_negatives if in_batch_soft_negatives is not None
+                 else self.config.in_batch_soft_negatives)
+
         if self.config.loss_form == "classification":
             if in_batch_soft_negatives:
                 raise ValueError("Cannot use in_batch_soft_negatives with classification loss")
@@ -343,10 +347,6 @@ class ContrastiveEmbeddingModel(PreTrainedModel):
         
         if self.fc is not None:
             embeddings = self.fc(embeddings)
-        
-        in_batch_soft_negatives = (self.config.loss_form != "classification") \
-            and (in_batch_soft_negatives if in_batch_soft_negatives is not None
-                 else self.config.in_batch_soft_negatives)
 
         loss_kwargs = dict(batch_soft_negatives=in_batch_soft_negatives,
                            regularization=self.config.regularization)
