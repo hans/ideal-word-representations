@@ -13,6 +13,12 @@ models:
     model: discrim-rnn_32
     equivalence: word_broad_10frames
 
+  # feedforward word model
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: ff_32
+    equivalence: word_broad_10frames
+
   # librispeech other models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
@@ -43,23 +49,7 @@ models:
   # LS hinge mAP-maximizing phoneme models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
-    model: rnn_32-hinge_ph-mAP1
-    equivalence: phoneme_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge_ph-mAP2
-    equivalence: phoneme_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge_ph-mAP3
-    equivalence: phoneme_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge_ph-mAP4
-    equivalence: phoneme_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge_ph-mAP5
+    model: rnn_8-hinge_ph-mAP1
     equivalence: phoneme_10frames
 
   # LS hinge mAP-maximizing word models
@@ -153,22 +143,17 @@ encoding:
     - model2: random32-w2v2_8
       model1: baseline
 
-    - model2: ls-word_broad-hinge-w2v2_8
-      model1: baseline
-    - model2: ls-word_broad_fixed-hinge-w2v2_8
-      model1: baseline
-
-    # with l2 normalization
-    - model2: ls-word_broad-hinge-w2v2_8-l2norm
-      model1: baseline
-    - model2: ls-word_broad_fixed-hinge-w2v2_8-l2norm
-      model1: baseline
+    # # with l2 normalization
+    # - model2: ls-word_broad-hinge-w2v2_8-l2norm
+    #   model1: baseline
+    # - model2: ls-word_broad_fixed-hinge-w2v2_8-l2norm
+    #   model1: baseline
     - model2: phoneme-l2norm
       model1: baseline
-    - model2: syllable-l2norm
-      model1: baseline
+    # - model2: syllable-l2norm
+    #   model1: baseline
 
-    # one impulse per phoneme rather than one impulse per word
+    # one impulse per phoneme rather than one impulse per unit
     - model2: ph-ls-word_broad-hinge-w2v2_8-l2norm
       model1: baseline
     - model2: ph-ls-word_broad_fixed-hinge-w2v2_8-l2norm
