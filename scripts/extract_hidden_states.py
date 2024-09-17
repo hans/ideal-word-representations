@@ -74,7 +74,7 @@ def main(config: DictConfig):
     hidden_state_dataset = extract_hidden_states(
         dataset, model, processor, config.base_model.layer)
     
-    hidden_state_dataset.to_hdf5(Path(HydraConfig.get().runtime.output_dir) / "hidden_states.h5")
+    hidden_state_dataset.to_hdf5(config.base_model.hidden_state_path)
 
 
 if __name__ == "__main__":

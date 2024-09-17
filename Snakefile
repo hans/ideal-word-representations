@@ -153,6 +153,7 @@ rule extract_hidden_states:
         python scripts/extract_hidden_states.py \
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
+            +base_model.hidden_states_path={output} \
             dataset.processed_data_dir={input.dataset}
         """)
 
