@@ -58,13 +58,14 @@ class StateSpaceAnalysisSpec:
             assert (cuts_validity_check.offset_frame_idx <= cuts_validity_check.end_frame).all()
 
     def to_hdf5(self, path: str, key=None):
-        with h5py.File(path, "w") as f:
+        with h5py.File(path, "a") as f:
             group = f
             if key is not None:
                 group = f.create_group(key)
 
             group.attrs["total_num_frames"] = self.total_num_frames
-            group["labels"] = [label.encode("utf-8") for label in self.labels]
+            labels = [repr(label) if not isinstance(label, str) else label for label in self.labels]
+            group["labels"] = [label.encode("utf-8") for label in labels]
 
             # flatten target_frame_spans, retaining original indices
             target_frame_spans = np.concatenate([np.array(spans_i) for spans_i in self.target_frame_spans])
@@ -85,6 +86,9 @@ class StateSpaceAnalysisSpec:
 
             total_num_frames = group.attrs["total_num_frames"]
             labels = [label.decode("utf-8") for label in group["labels"]]
+
+            if all(label.startswith('"') and label.endswith('"') for label in labels):
+                labels = [eval(label) for label in labels]
 
             target_frame_spans = group["target_frame_spans"][()]
             target_frame_span_boundaries = group["target_frame_span_boundaries"][()]
