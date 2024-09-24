@@ -1,0 +1,18 @@
+baseline_features:
+  - onset
+  - phnfeatConsOnset
+  - maxDtL
+  - formantMedOnset
+  - F0
+
+model_features:
+  ph-word_broad-discrim-w2v2_8-l2norm:
+    train_dataset: librispeech-train-clean-100
+    base_model: w2v2_8
+    model: discrim-rnn_32
+    equivalence: word_broad_10frames
+
+    state_space: phoneme
+    featurization: mean
+    normalization: l2norm
+    permute: null

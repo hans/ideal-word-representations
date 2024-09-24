@@ -6,8 +6,8 @@ baseline_features:
   - F0
 
 model_features:
-  ph-syllable-l2norm:
-    base_model: w2v2_6
+  ph-syllable-w2v2_8-l2norm:
+    base_model: w2v2_8
     model: rnn_8-weightdecay0.01
     equivalence: syllable_10frames
 

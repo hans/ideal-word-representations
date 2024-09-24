@@ -6,11 +6,12 @@ baseline_features:
   - F0
 
 model_features:
-  random8-w2v2_8:
+  random8-w2v2_8-l2norm:
     base_model: w2v2_8
     model: randomrnn_8
     equivalence: random
 
     state_space: phoneme
     featurization: mean
+    normalization: l2norm
     permute: null

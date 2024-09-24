@@ -128,19 +128,13 @@ encoding:
         - B1
 
   model_comparisons:
-    - model2: phoneme
+    - model2: biphone_recon-w2v2_8-l2norm
       model1: baseline
-    - model2: next_phoneme
+    - model2: biphone_pred-w2v2_8-l2norm
       model1: baseline
-    - model2: biphone_recon
+    - model2: random8-w2v2_8-l2norm
       model1: baseline
-    - model2: biphone_pred
-      model1: baseline
-    - model2: syllable
-      model1: baseline
-    - model2: random8-w2v2_8
-      model1: baseline
-    - model2: random32-w2v2_8
+    - model2: random32-w2v2_8-l2norm
       model1: baseline
 
     # # with l2 normalization
@@ -148,17 +142,17 @@ encoding:
     #   model1: baseline
     # - model2: ls-word_broad_fixed-hinge-w2v2_8-l2norm
     #   model1: baseline
-    - model2: phoneme-l2norm
+    - model2: phoneme-w2v2_8-l2norm
       model1: baseline
-    # - model2: syllable-l2norm
-    #   model1: baseline
 
     # one impulse per phoneme rather than one impulse per unit
     - model2: ph-ls-word_broad-hinge-w2v2_8-l2norm
       model1: baseline
     - model2: ph-ls-word_broad_fixed-hinge-w2v2_8-l2norm
       model1: baseline
-    - model2: ph-syllable-l2norm
+    - model2: ph-syllable-w2v2_8-l2norm
+      model1: baseline
+    - model2: ph-word_broad-discrim-w2v2_8-l2norm
       model1: baseline
 
     # - model2: word_broad-aniso2-w2v2_8

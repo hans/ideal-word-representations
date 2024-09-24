@@ -6,10 +6,10 @@ baseline_features:
   - F0
 
 model_features:
-  phoneme-l2norm:
-    base_model: w2v2_6
-    model: rnn_3-weightdecay0.01
-    equivalence: phoneme_10frames
+  biphone_recon-w2v2_8-l2norm:
+    base_model: w2v2_8
+    model: rnn_8-weightdecay0.01
+    equivalence: biphone_recon_10frames
 
     state_space: phoneme
     featurization: mean

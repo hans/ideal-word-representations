@@ -6,12 +6,12 @@ baseline_features:
   - F0
 
 model_features:
-  syllable-l2norm:
+  biphone_pred-w2v2_8-l2norm:
     base_model: w2v2_8
     model: rnn_8-weightdecay0.01
-    equivalence: syllable_10frames
+    equivalence: biphone_pred_10frames
 
-    state_space: syllable
+    state_space: phoneme
     featurization: mean
     normalization: l2norm
     permute: null
