@@ -6,6 +6,7 @@ from pathlib import Path
 
 from beartype import beartype
 import datasets
+import h5py
 import mne
 from mne.decoding import ReceptiveField
 import numpy as np
@@ -55,8 +56,13 @@ class ContrastiveModelSnapshot:
         with open(feature_spec.equivalence_path, "rb") as f:
             equiv_dataset: SpeechEquivalenceDataset = torch.load(f)
         hidden_states = SpeechHiddenStateDataset.from_hdf5(feature_spec.hidden_state_path)
-        with open(feature_spec.state_space_path, "rb") as f:
-            all_state_spaces: dict[str, StateSpaceAnalysisSpec] = torch.load(f)
+
+        with h5py.File(feature_spec.state_space_path, "r") as f:
+            state_space_keys = f.keys()
+        all_state_spaces = {
+            key: StateSpaceAnalysisSpec.from_hdf5(feature_spec.state_space_path, key)
+            for key in state_space_keys
+        }
         state_space = all_state_spaces[feature_spec.state_space]
         embeddings = np.load(feature_spec.embeddings_path)
 
