@@ -75,7 +75,7 @@ class StateSpaceAnalysisSpec:
 
         if self.cuts is not None:
             cuts_key = "cuts" if key is None else f"{key}/cuts"
-            self.cuts.to_hdf(path, key="cuts", mode="a")
+            self.cuts.to_hdf(path, key=cuts_key, mode="a")
 
     @classmethod
     def from_hdf5(cls, path: str, key=None):
