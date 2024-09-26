@@ -58,7 +58,7 @@ class ContrastiveModelSnapshot:
         hidden_states = SpeechHiddenStateDataset.from_hdf5(feature_spec.hidden_state_path)
 
         with h5py.File(feature_spec.state_space_path, "r") as f:
-            state_space_keys = f.keys()
+            state_space_keys = set(f.keys()) - {"cuts"}
         all_state_spaces = {
             key: StateSpaceAnalysisSpec.from_hdf5(feature_spec.state_space_path, key)
             for key in state_space_keys
