@@ -55,7 +55,7 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
     from data_utils import data_loader
     patient = data_loader.nfm_patient(data_spec.subject)
     task_event_dfs, block_ecog_activity = patient.load_task_ecog(
-        "TIMIT", "trial", zscore=False, keep_bands="hga",
+        "TIMIT", "trial", keep_bands="hga",
         include_task_levels=["trial"])
 
     # sanity checks
