@@ -3,10 +3,12 @@ from typing import TypeAlias, cast
 
 import datasets
 import hydra
-import numpy as np
 from omegaconf import DictConfig
 import pandas as pd
-import torch
+
+import dask
+from dask import delayed
+from dask.distributed import Client, LocalCluster
 
 from src.analysis.state_space import StateSpaceAnalysisSpec
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
@@ -271,18 +273,32 @@ STATE_SPACE_COMPUTERS = {
     "phoneme": compute_phoneme_state_space,
 }
 
+@delayed
+def compute_state_space_spec(name: str, computer, dataset_path, hidden_state_path):
+    dataset = cast(datasets.Dataset, datasets.load_from_disk(dataset_path))
+    hidden_states = SpeechHiddenStateDataset.from_hdf5(hidden_state_path)
+
+    return name, computer(dataset, hidden_states)
+
 @hydra.main(config_path="../conf", config_name="config.yaml", version_base="1.2")
 def main(config: DictConfig):
-    dataset = cast(datasets.Dataset, datasets.load_from_disk(config.dataset.processed_data_dir))
+    dask_client = Client(LocalCluster())
 
-    hidden_states = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
+    # compute in parallel
+    dask_results = dask.compute(*[
+        compute_state_space_spec(name, computer,
+                                 config.dataset.processed_data_dir,
+                                 config.base_model.hidden_state_path)
+        for name, computer in STATE_SPACE_COMPUTERS.items()
+    ])
 
+    # ensure no name collisions
     all_state_space_specs = {}
-    for name, computer in STATE_SPACE_COMPUTERS.items():
-        new_specs = computer(dataset, hidden_states)
+    for name, new_specs in dask_results:
         assert not set(new_specs.keys()) & set(all_state_space_specs.keys())
         all_state_space_specs.update(new_specs)
 
+    # save
     for name, spec in all_state_space_specs.items():
         spec.to_hdf5(config.analysis.state_space_specs_path, key=name)
 
