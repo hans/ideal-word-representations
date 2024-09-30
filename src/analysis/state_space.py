@@ -64,8 +64,16 @@ class StateSpaceAnalysisSpec:
                 group = f.create_group(key)
 
             group.attrs["total_num_frames"] = self.total_num_frames
-            labels = [repr(label) if not isinstance(label, str) else label for label in self.labels]
+
+            # if we have non-string labels, serialize with repr and annotate
+            labels_are_repr = False
+            labels = self.labels
+            if any(not isinstance(label, str) for label in self.labels):
+                labels_are_repr = True
+                labels = [repr(label) for label in self.labels]
+
             group["labels"] = [label.encode("utf-8") for label in labels]
+            group.attrs["labels_are_repr"] = labels_are_repr
 
             # flatten target_frame_spans, retaining original indices
             target_frame_spans = np.concatenate([np.array(spans_i) for spans_i in self.target_frame_spans])
@@ -87,7 +95,7 @@ class StateSpaceAnalysisSpec:
             total_num_frames = group.attrs["total_num_frames"]
             labels = [label.decode("utf-8") for label in group["labels"]]
 
-            if all(label.startswith('"') and label.endswith('"') for label in labels):
+            if group.attrs.get("labels_are_repr", False):
                 labels = [eval(label) for label in labels]
 
             target_frame_spans = group["target_frame_spans"][()]
