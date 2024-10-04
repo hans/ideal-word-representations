@@ -64,6 +64,20 @@ models:
     model: rnn_32-hinge-mAP4
     equivalence: word_broad_10frames_fixedlen25
 
+  # LS discriminative models
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP1
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP2
+    equivalence: word_broad_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP3
+    equivalence: word_broad_10frames
+
 encoding:
   data:
     - subject: EC152
