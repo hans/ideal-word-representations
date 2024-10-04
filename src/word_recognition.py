@@ -130,7 +130,7 @@ def train(config: DictConfig):
             config["device"] = "cpu"
 
     hidden_states = SpeechHiddenStateDataset.from_hdf5(config.base_model.hidden_state_path)
-    state_space_spec: ss.StateSpaceAnalysisSpec = torch.load(config.analysis.state_space_specs_path)["word"]
+    state_space_spec = ss.StateSpaceAnalysisSpec.from_hdf5(config.analysis.state_space_specs_path, "word")
     assert state_space_spec.is_compatible_with(hidden_states)
     embeddings = np.load(config.model.embeddings_path)
 
