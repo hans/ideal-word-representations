@@ -236,7 +236,7 @@ class ContrastiveEmbeddingClassificationObjective(nn.Module):
         assert embeddings.shape[0] == embeddings_class.shape[0]
         assert embeddings_class.max() < embeddings.shape[1]
 
-        loss = F.cross_entropy(embeddings, embeddings_class)
+        loss = F.cross_entropy(embeddings, embeddings_class, reduction="none")
         if reduction == "mean":
             loss = loss.mean()
 
