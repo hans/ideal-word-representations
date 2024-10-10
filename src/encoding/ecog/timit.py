@@ -470,13 +470,6 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     if isinstance(scale_features, bool):
         scale_features = scale_features * np.ones(len(feature_sets))
 
-    # TODO use or remove these
-    inclSentOns = np.ones(len(feature_sets))
-    zscoreYflag = np.zeros(len(feature_sets))
-    scaleXflag = np.ones(len(feature_sets))
-    scaleYflag = np.zeros(len(feature_sets))
-    highpassflag = np.zeros(len(feature_sets))
-
     # paper strfs
     dataf = out[0]["dataf"];
     fs = out[0]["soundf"]
@@ -587,6 +580,11 @@ def prepare_strf_xy(out: OutFileWithAnnotations,
     Y -= Y.mean(axis=0)
     Y /= (Y.max(axis=0) - Y.min(axis=0))
 
+    nan_response_dimensions = np.where(np.isnan(Y).any(axis=0))[0]
+    if len(nan_response_dimensions):
+        L.warning(f"Response dimensions {nan_response_dimensions} contain NaNs. Keeping them and filling with zero to avoid crashes")
+        Y[:, nan_response_dimensions] = 0
+
     return X, Y, feature_names, feature_shapes, trial_onsets
 
 
@@ -667,6 +665,14 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
                 continue
             else:
                 raise
+
+        # Check if we picked an alpha at the edge of the hparam space;
+        # if so, log a warning
+        best_alpha = model.best_params_["estimator"]
+        if best_alpha == hparams["estimator"].min():
+            L.warning(f"Best alpha {best_alpha} is at the lower edge of the search space")
+        elif best_alpha == hparams["estimator"].max():
+            L.warning(f"Best alpha {best_alpha} is at the upper edge of the search space")
 
         best_estimator: TemporalReceptiveField = model.best_estimator_
         preds.append(best_estimator.predict(X[test]))
