@@ -85,5 +85,8 @@ def main(config):
     # save coef estimates per fold
     torch.save(coefs, out_dir / "coefs.pkl")
 
+    # save hparams
+    torch.save(best_hparams, out_dir / "hparams.pkl")
+
     preds = np.concatenate(preds, axis=0)
     np.save(out_dir / "predictions.npy", preds)
