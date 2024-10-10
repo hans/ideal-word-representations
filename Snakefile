@@ -621,7 +621,8 @@ rule estimate_encoder:
         scores = "outputs/encoders/{dataset}/{feature_sets}/{subject}/scores.csv",
         predictions = "outputs/encoders/{dataset}/{feature_sets}/{subject}/predictions.npy",
         model = "outputs/encoders/{dataset}/{feature_sets}/{subject}/model.pkl",
-        coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.pkl"
+        coefs = "outputs/encoders/{dataset}/{feature_sets}/{subject}/coefs.pkl",
+        hparams = "outputs/encoders/{dataset}/{feature_sets}/{subject}/hparams.pkl"
 
     run:
         run_encoder(input, output, wildcards)
