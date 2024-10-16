@@ -204,8 +204,8 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
     embedding_scatter_samples, embedding_scatter_data = [], []
 
     for traj in aligned_dataset.iter_trajectories(feature_spec.state_space):
-        unit_start = traj["item_start_frame"] + traj["span_model_frames"][0]
-        unit_end = traj["item_start_frame"] + traj["span_model_frames"][1]
+        unit_start = traj.item_start_frame + traj.span_model_frames[0]
+        unit_end = traj.item_start_frame + traj.span_model_frames[1]
 
         # Prepare embedding of the given unit
         unit_embedding = None
@@ -228,7 +228,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
             raise ValueError(f"Unknown featurization {feature_spec.featurization}")
         
         # Scatter an impulse predictor at the sample aligned to the onset of the unit
-        embedding_scatter_samples.append((traj["trial_idx"], traj["span_ecog_samples"][0]))
+        embedding_scatter_samples.append((traj.trial_idx, traj.span_ecog_samples[0]))
         embedding_scatter_data.append(unit_embedding)
 
     embedding_scatter_samples = np.array(embedding_scatter_samples)

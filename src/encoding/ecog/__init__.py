@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import logging
-from typing import Literal, TypeAlias, Union, cast, Optional
+from typing import Literal, TypeAlias, Union, cast, Optional, Generator
 
 from pathlib import Path
 
@@ -112,6 +112,79 @@ def process_item_frame_mapping(item,
         out.compression_ratios[name] = (frame_end - frame_start) / len(item["input_values"])
 
 
+@dataclass
+class AlignedTimeSpan:
+    """
+    Describes a time span of recording in units aligned between stimulus time,
+    model sampling frames, and ECoG sampling frames.
+    """
+
+    name: str
+    """Unique stimulus name (e.g. sentence name)"""
+
+    item_idx: int
+    """
+    Index of stimulus in the model dataset. This can be used to index the
+    Huggingface dataset.
+    """
+
+    trial_idx: int
+    """
+    Index of stimulus in the ECoG presentation order. This can be used to index
+    an `OutFile` or `OutFileWithAnnotations` object.
+    """
+
+    span_secs: tuple[float, float]
+    """
+    Time span in seconds (both ends inclusive) relative to the onset of the
+    stimulus / item.
+    """
+
+    span_model_frames: tuple[int, int]
+    """
+    Time span in model frames (both ends inclusive) relative to the onset of
+    the stimulus / item. This can be used to index into the model embeddings
+    (together with `item_start_frame`).
+    """
+
+    span_ecog_samples: tuple[int, int]
+    """
+    Time span in ECoG samples (both ends inclusive) relative to the onset of
+    the stimulus / item. This can be used to index into the ECoG data.
+    """
+
+    span_ecog_samples_nopad: tuple[int, int]
+    """
+    Time span in ECoG samples (both ends inclusive) relative to the onset of
+    the non-padded stimulus.
+    """
+
+    item_start_frame: int
+    """
+    Frame index of the onset of the stimulus / item in the model dataset.
+    """
+
+    item_end_frame: int
+    """
+    Frame index of the offset of the stimulus / item in the model dataset.
+    """
+
+    state_space: Optional[str] = None
+    """
+    If this span was generated from a state space, the name of the state space.
+    """
+
+    label_idx: Optional[int] = None
+    """
+    If this span was generated from a state space, the index of the label.
+    """
+
+    instance_idx: Optional[int] = None
+    """
+    If this span was generated from a state space, the index of the label instance.
+    """
+
+
 class AlignedECoGDataset:
     """
     Stores alignment between ECoG trials (one trial per sentence) and a
@@ -136,6 +209,7 @@ class AlignedECoGDataset:
                                         frames_by_item=snapshot.hidden_states.frames_by_item,
                                         out=alignment_result))
         self.name_to_item_idx = alignment_result.name_to_item_idx
+        self.item_idx_to_name = {v: k for k, v in self.name_to_item_idx.items()}
         self.name_to_frame_bounds = alignment_result.name_to_frame_bounds
         self.compression_ratios = alignment_result.compression_ratios
 
@@ -178,7 +252,7 @@ class AlignedECoGDataset:
         return mne.io.RawArray(data, self._mne_info)
 
     def iter_trajectories(self, state_space_name: str,
-                          trial_idx: Optional[int] = None):
+                          trial_idx: Optional[int] = None) -> Generator[AlignedTimeSpan, None, None]:
         """
         Yields dicts describing spans of a state space in the given aligned dataset.
 
@@ -195,7 +269,7 @@ class AlignedECoGDataset:
             trial_idxs = range(len(self.out))
 
         for trial_idx in trial_idxs:
-            name = self.out[trial_idx]["name"]
+            name = cast(str, self.out[trial_idx]["name"])
 
             # NB this is a half-open range -- so will need to adjust for state-space methods
             item_frame_start, item_frame_end = self.name_to_frame_bounds[name]
@@ -214,24 +288,100 @@ class AlignedECoGDataset:
                 traj_start_ecog_nopad = int(traj_start_secs * trial_i["dataf"])
                 traj_end_ecog_nopad = int(traj_end_secs * trial_i["dataf"])
 
-                yield {
-                    "name": name,
-                    "item_idx": self.name_to_item_idx[name],
-                    "trial_idx": trial_idx,
+                yield AlignedTimeSpan(
+                    name=name,
+                    item_idx=self.name_to_item_idx[name],
+                    trial_idx=trial_idx,
 
-                    "state_space": state_space_name,
-                    "label_idx": traj_label_idx,
-                    "instance_idx": traj_instance_idx,
+                    state_space=state_space_name,
+                    label_idx=traj_label_idx,
+                    instance_idx=traj_instance_idx,
 
-                    # trajectory span, relative to item onset
-                    "span_secs": (traj_start_secs, traj_end_secs),
-                    "span_model_frames": (traj_start - item_frame_start, traj_end - item_frame_start),
-                    "span_ecog_samples": (traj_start_ecog, traj_end_ecog),
-                    "span_ecog_samples_nopad": (traj_start_ecog_nopad, traj_end_ecog_nopad),
+                    span_secs=(traj_start_secs, traj_end_secs),
+                    span_model_frames=(traj_start, traj_end),
+                    span_ecog_samples=(traj_start_ecog, traj_end_ecog),
+                    span_ecog_samples_nopad=(traj_start_ecog_nopad, traj_end_ecog_nopad),
 
-                    "item_start_frame": item_frame_start,
-                    "item_end_frame": item_frame_end,
-                }
+                    item_start_frame=item_frame_start,
+                    item_end_frame=item_frame_end,
+                )
+
+    def get_trajectory_span(self, state_space_name: str,
+                            label: str,
+                            instance_idx: int) -> AlignedTimeSpan:
+        """
+        Get an aligned time span describing a particular instance of a label in the given
+        state space.
+        """
+        state_space = self._snapshot.all_state_spaces[state_space_name]
+        if state_space.cuts is None:
+            raise ValueError("Cannot get trajectory span for state space without cuts")
+        
+        cut_rows = state_space.cuts.loc[label]
+        cut_rows = cut_rows.loc[instance_idx]
+
+        item_idx = cut_rows.iloc[0].item_idx
+
+        try:
+            stimulus_name = self.item_idx_to_name[item_idx]
+        except KeyError as e:
+            raise KeyError("This span does not exist in the ECoG data.") from e
+
+        trial_idx = self.name_to_trial_idx[stimulus_name]
+        trial_i = self.out[trial_idx]
+        trial_start_padding = trial_i["befaft"][0]  # padding at start of trial, in seconds
+        label_idx = state_space.labels.index(label)
+
+        # NB this is a half-open range -- so will need to adjust for state-space methods
+        item_frame_start, item_frame_end = self.name_to_frame_bounds[stimulus_name]
+
+        span_frame_start, span_frame_end = state_space.target_frame_spans[label_idx][instance_idx]
+        assert span_frame_start >= item_frame_start
+        assert span_frame_end <= item_frame_end
+
+        span_start_secs = (span_frame_start - item_frame_start) / self.compression_ratios[stimulus_name] / self.audio_sfreq
+        span_end_secs = (span_frame_end - item_frame_start) / self.compression_ratios[stimulus_name] / self.audio_sfreq
+
+        span_start_ecog = int((trial_start_padding + span_start_secs) * trial_i["dataf"])
+        span_end_ecog = int((trial_start_padding + span_end_secs) * trial_i["dataf"])
+
+        span_start_ecog_nopad = int(span_start_secs * trial_i["dataf"])
+        span_end_ecog_nopad = int(span_end_secs * trial_i["dataf"])
+
+        return AlignedTimeSpan(
+            name=stimulus_name,
+            item_idx=item_idx,
+            trial_idx=trial_idx,
+
+            state_space=state_space_name,
+            label_idx=label_idx,
+            instance_idx=instance_idx,
+
+            span_secs=(span_start_secs, span_end_secs),
+            span_model_frames=(span_frame_start, span_frame_end),
+            span_ecog_samples=(span_start_ecog, span_end_ecog),
+            span_ecog_samples_nopad=(span_start_ecog_nopad, span_end_ecog_nopad),
+
+            item_start_frame=item_frame_start,
+            item_end_frame=item_frame_end,
+        )
+    
+    def get_trajectory_spans_for_label(self, state_space_name: str, label: str) -> list[AlignedTimeSpan]:
+        state_space = self._snapshot.all_state_spaces[state_space_name]
+        if state_space.cuts is None:
+            raise ValueError("Cannot get trajectory span for state space without cuts")
+        
+        cut_rows = state_space.cuts.loc[label]
+
+        # Retain just the items that have aligned ECoG data
+        aligned_item_idxs = set(self.item_idx_to_name.keys())
+        cut_rows = cut_rows[cut_rows.item_idx.isin(aligned_item_idxs)]
+
+        spans = []
+        for instance_idx in cut_rows.index.get_level_values("instance_idx").unique():
+            spans.append(self.get_trajectory_span(state_space_name, label, instance_idx))
+
+        return spans
 
 
 def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
