@@ -212,12 +212,15 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         if feature_spec.featurization == "last_frame":
             unit_embedding = model.embeddings[unit_end]
         elif feature_spec.featurization == "mean":
+            # this is an inclusive span; make sure the slice gets at least one sample
+            unit_end = max(unit_end, unit_start + 1)
             unit_embedding = model.embeddings[unit_start:unit_end].mean(axis=0)
         elif isinstance(feature_spec.featurization, (tuple, list, ListConfig)):
             if feature_spec.featurization[0] == "mean_last_k":
                 k = int(feature_spec.featurization[1])
                 mean_start = max(unit_end - k, unit_start)
-                mean_end = unit_end
+                # this is an inclusive span, make sure the slice gets at least one sample
+                mean_end = max(unit_end, mean_start + 1)
                 unit_embedding = model.embeddings[mean_start:mean_end].mean(axis=0)
             else:
                 raise ValueError(f"Unknown featurization {feature_spec.featurization}")
@@ -229,7 +232,7 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         embedding_scatter_data.append(unit_embedding)
 
     embedding_scatter_samples = np.array(embedding_scatter_samples)
-    embedding_scatter_data = np.array(embedding_scatter_data)    
+    embedding_scatter_data = np.array(embedding_scatter_data)
     if feature_spec.permute == "permute_units":
         # Permute mapping between token units and their embeddings
         perm = np.random.permutation(embedding_scatter_data.shape[0])

@@ -179,6 +179,12 @@ class AlignedECoGDataset:
 
     def iter_trajectories(self, state_space_name: str,
                           trial_idx: Optional[int] = None):
+        """
+        Yields dicts describing spans of a state space in the given aligned dataset.
+
+        The span is given as an INCLUSIVE range in units of seconds, model frames, and
+        ECoG samples.
+        """
         if state_space_name not in self._snapshot.all_state_spaces:
             raise ValueError(f"Unknown state space {state_space_name}")
         state_space = self._snapshot.all_state_spaces[state_space_name]
