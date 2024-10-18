@@ -140,6 +140,9 @@ encoding:
       data_source: fomo
       blocks:
         - B1
+    - subject: EC282
+      blocks:
+        - B18
 
   model_comparisons:
     - model2: biphone_recon-w2v2_8-l2norm
