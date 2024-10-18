@@ -701,6 +701,9 @@ rule estimate_all_baseline_unique_variance:
         all_unique_variance_outputs
 
 
+all_encoder_within_subject_comparisons = lambda _: [
+    f"outputs/encoder_comparison/{ENCODING_DATASET}/{subject}/{comp['model2']}/{comp['model1']}/"
+    for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS]
 
 rule compare_encoder_within_subject:
     input:
@@ -759,11 +762,14 @@ rule compare_encoder_within_subject:
         """)
 
 
+rule compare_all_encoders_within_subject:
+    input:
+        all_encoder_within_subject_comparisons,
+
+
 rule compare_all_encoders_across_subject:
     input:
-        all_comparisons = lambda _: [
-            f"outputs/encoder_comparison/{{dataset}}/{subject}/{comp['model2']}/{comp['model1']}/"
-            for comp in config["encoding"]["model_comparisons"] for subject in ALL_ENCODING_SUBJECTS],
+        all_comparisons = all_encoder_within_subject_comparisons,
         notebook = "notebooks/encoding/compare_across_subject.ipynb",
 
     output:
@@ -861,18 +867,22 @@ rule encoding_sanity_checks:
         outdir = directory(f"outputs/encoding_sanity_checks/{ENCODING_DATASET}"),
         notebook = f"outputs/encoding_sanity_checks/{ENCODING_DATASET}/sanity_checks.ipynb"
 
-    shell:
-        """
+    run:
+        params = {
+            "dataset": ENCODING_DATASET,
+            "encoder_dirs": list(map(str, input.all_encoding_outputs)),
+            "permuted_encoder_dirs": list(map(str, input.all_permutation_outputs)),
+            "ttest_results_path": input.ttest_results,
+            "scores_path": input.score_results,
+            "output_dir": output.outdir,
+        }
+
+        shell(f"""
         export PYTHONPATH=`pwd`
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p dataset {ENCODING_DATASET} \
-            -p encoder_dirs {input.all_encoding_outputs} \
-            -p permuted_encoder_dirs {input.all_permutation_outputs} \
-            -p ttest_results_path {input.ttest_results} \
-            -p scores_path {input.score_results} \
-            -p output_dir {output.outdir}
-        """
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 # get all the encoding results
