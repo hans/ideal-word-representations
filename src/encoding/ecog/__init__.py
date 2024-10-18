@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import logging
 from typing import Literal, TypeAlias, Union, cast, Optional, Generator
 
@@ -441,7 +441,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             zscore_mean = np.concatenate(list(data.values()), axis=1).mean(axis=1)
             zscore_std = np.concatenate(list(data.values()), axis=1).std(axis=1)
         else:
-            seen_trials = set(span["trial_idx"] for span in trajectories)
+            seen_trials = set(span.trial_idx for span in trajectories)
 
             all_trial_data = np.concatenate([
                 aligned_dataset.out[trial_idx]["resp"]
@@ -456,12 +456,12 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             zscore_std = zscore_std[subset_electrodes]
 
     for span in tqdm(trajectories):
-        trial = aligned_dataset.out[span["trial_idx"]]
+        trial = aligned_dataset.out[span.trial_idx]
         name = trial["name"]
 
         if data is not None:
             try:
-                data_i = data[span["name"]]
+                data_i = data[span.name]
             except KeyError:
                 continue
         else:
@@ -474,9 +474,9 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
         # data_i: n_channels * n_samples
 
         if data_is_padded:
-            start_i, end_i = span["span_ecog_samples"]
+            start_i, end_i = span.span_ecog_samples
         else:
-            start_i, end_i = span["span_ecog_samples_nopad"]
+            start_i, end_i = span.span_ecog_samples_nopad
         anchor_point = start_i if align_to == "onset" else end_i
 
         epoch_start_i = max(0, anchor_point + epoch_window[0])
@@ -510,9 +510,9 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
 
         epoch_info.append({
             "epoch_idx": len(epochs),
-            "epoch_label": state_space.labels[span["label_idx"]],
+            "epoch_label": state_space.labels[span.label_idx],
             "epoch_duration_samples": epoch_length_i,
-            **span
+            **asdict(span)
         })
         epochs.append(epoch)
 
