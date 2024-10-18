@@ -628,6 +628,15 @@ rule estimate_encoder:
         run_encoder(input, output, wildcards)
 
 
+all_encoding_outputs = lambda wildcards: \
+    set(f"outputs/encoders/{ENCODING_DATASET}/{comp['model2']}/{subject}"
+        for comp in config["encoding"]["model_comparisons"]
+        for subject in ALL_ENCODING_SUBJECTS) | \
+    set(f"outputs/encoders/{ENCODING_DATASET}/{comp['model1']}/{subject}"
+        for comp in config["encoding"]["model_comparisons"]
+        for subject in ALL_ENCODING_SUBJECTS)
+
+
 """
 Estimate a single permutation baseline for a given model embedding.
 """
@@ -653,13 +662,14 @@ rule estimate_encoder_unit_permutation:
         run_encoder(input, output, wildcards, overrides=overrides)
 
 
-rule estimate_all_permutations:
-    input:
-        lambda wildcards: [f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{comp['model2']}/{subject}"
+all_permutation_outputs = lambda wildcards: [f"outputs/encoders-permute_{perm_name}/{perm_idx}/{ENCODING_DATASET}/{comp['model2']}/{subject}"
                            for comp in config["encoding"]["model_comparisons"]
                            for subject in ALL_ENCODING_SUBJECTS
                            for perm_name, perm in config["encoding"]["permutation_tests"].items()
                            for perm_idx in range(perm["num_permutations"])]
+rule estimate_all_permutations:
+    input:
+        all_permutation_outputs
 
 
 rule estimate_encoder_unique_variance:
@@ -684,10 +694,11 @@ rule estimate_encoder_unique_variance:
         """)
 
 
+all_unique_variance_outputs = expand(f"outputs/encoder_unique_variance/{ENCODING_DATASET}/baseline/{{subject}}/unique_variance.csv",
+               subject=ALL_ENCODING_SUBJECTS)
 rule estimate_all_baseline_unique_variance:
     input:
-        expand(f"outputs/encoder_unique_variance/{ENCODING_DATASET}/baseline/{{subject}}/unique_variance.csv",
-               subject=ALL_ENCODING_SUBJECTS)
+        all_unique_variance_outputs
 
 
 
@@ -778,6 +789,34 @@ rule compare_all_encoders_across_subject:
         """)
 
 
+rule electrode_contrast:
+    input:
+        notebook = "notebooks/encoding/electrode_contrast.ipynb",
+        ttest_results = "outputs/encoder_comparison_across_subjects/{dataset}/ttest.csv",
+        scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
+        encoder_dirs = all_encoding_outputs,
+    
+    output:
+        dir = directory("outputs/electrode_contrast/{dataset}"),
+        notebook = "outputs/electrode_contrast/{dataset}/electrode_contrast.ipynb",
+        contrasts = "outputs/electrode_contrast/{dataset}/contrasts.csv",
+
+    run:
+        params = {
+            "dataset": wildcards.dataset,
+            "ttest_results_path": input.ttest_results,
+            "scores_path": input.scores,
+            "encoder_dirs": list(map(str, input.encoder_dirs)),
+            "output_dir": output.dir,
+        }
+        shell(f"""
+        export PYTHONPATH=`pwd`
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -y "{yaml.safe_dump(params)}"
+        """)
+
+
 rule electrode_study_within_subject:
     input:
         ttest_results = "outputs/encoder_comparison_across_subjects/{dataset}/ttest.csv",
@@ -803,10 +842,49 @@ rule electrode_study_within_subject:
         """
 
 
+all_electrode_study_outputs = lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
+                   for subject in ALL_ENCODING_SUBJECTS],
 rule electrode_study_within_subject_all:
     input:
-        lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
-                   for subject in ALL_ENCODING_SUBJECTS],
+        all_electrode_study_outputs,
+
+
+rule encoding_sanity_checks:
+    input:
+        notebook = "notebooks/encoding/sanity_checks.ipynb",
+        ttest_results = f"outputs/encoder_comparison_across_subjects/{ENCODING_DATASET}/ttest.csv",
+        score_results = f"outputs/encoder_comparison_across_subjects/{ENCODING_DATASET}/scores.csv",
+        all_encoding_outputs = all_encoding_outputs,
+        all_permutation_outputs = all_permutation_outputs,
+
+    output:
+        outdir = directory(f"outputs/encoding_sanity_checks/{ENCODING_DATASET}"),
+        notebook = f"outputs/encoding_sanity_checks/{ENCODING_DATASET}/sanity_checks.ipynb"
+
+    shell:
+        """
+        export PYTHONPATH=`pwd`
+        papermill --log-output \
+            {input.notebook} {output.notebook} \
+            -p dataset {ENCODING_DATASET} \
+            -p encoder_dirs {input.all_encoding_outputs} \
+            -p permuted_encoder_dirs {input.all_permutation_outputs} \
+            -p ttest_results_path {input.ttest_results} \
+            -p scores_path {input.score_results} \
+            -p output_dir {output.outdir}
+        """
+
+
+# get all the encoding results
+rule encoding:
+    input:
+        all_electrode_study_outputs,
+        f"outputs/encoder_comparison_across_subjects/{ENCODING_DATASET}/ttest_filtered.csv",
+        f"outputs/electrode_contrast/{ENCODING_DATASET}/contrasts.csv",
+        all_encoding_outputs,
+        all_permutation_outputs,
+        all_unique_variance_outputs,
+        f"outputs/encoding_sanity_checks/{ENCODING_DATASET}/sanity_checks.ipynb",
 
 
 rule estimate_rsa:
