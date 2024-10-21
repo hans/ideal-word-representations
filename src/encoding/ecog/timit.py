@@ -94,6 +94,13 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
         ret["onset"] = trial["onsOff"][0]
         ret["offset"] = trial["onsOff"][1]
 
+        # phnFeatConsOnset index | phnfeatonset index | description
+        # 0 | 0  | dorsal (sh, k, kcl, g, gcl, eng, ng, ch, jh)
+        # 1 | 1  | coronal (s, z, t, tcl, d, dcl, n, ch, jh)
+        # 2 | 2  | labial (f, v, p, pcl, b, bcl, m, em)
+        # 3 | 7  | plosive (p, pcl, t, tcl, k, kcl, b, bcl, d, dcl, g, gcl)
+        # 4 | 8  | fricative (f, v, th, dh, s, sh, z, zh, hh, hv, ch, jh)
+        # 5 | 10 | nasal (m, em, n, en, ng, eng, nx)
         ret["phnfeatConsOnset"] = trial["phnfeatonset"][[0, 1, 2, 7, 8, 10]]
         
         ret["maxDtL"] = trial["loudnessall"][5]
