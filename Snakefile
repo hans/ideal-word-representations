@@ -829,6 +829,7 @@ rule electrode_study_within_subject:
         scores = "outputs/encoder_comparison_across_subjects/{dataset}/scores.csv",
         unique_variance = "outputs/encoder_unique_variance/{dataset}/baseline/{subject}/unique_variance.csv",
         notebook = "notebooks/encoding/electrode_study_within_subject.ipynb",
+        contrasts = "outputs/electrode_contrast/{dataset}/contrasts.csv",
 
     output:
         dir = directory("outputs/electrode_study/{dataset}/{subject}"),
@@ -843,6 +844,7 @@ rule electrode_study_within_subject:
             -p subject {wildcards.subject} \
             -p ttest_results_path {input.ttest_results} \
             -p scores_path {input.scores} \
+            -p contrasts_path {input.contrasts} \
             -p unique_variance_path {input.unique_variance} \
             -p output_dir {output.dir}
         """
