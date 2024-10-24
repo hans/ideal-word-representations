@@ -31,27 +31,33 @@ def coefs_to_df(coefs, feature_names, output_names, sfreq) -> pd.DataFrame:
     """
     Convert the saved coefs array from `estimate_encoder` to a TRF coefficient dataframe.
     """
-    trf_df = []
-
     num_folds = len(coefs)
     num_electrodes, num_features, num_lags = coefs[0].shape
-    assert num_electrodes == len(output_names)
-    assert num_features == len(feature_names)
 
-    for fold, fold_coefs in enumerate(coefs):
-        for electrode_idx, feature_idx, lag_idx in np.ndindex(fold_coefs.shape):
-            trf_df.append({
-                "fold": fold,
-                "feature": feature_names[feature_idx],
-                "output_name": output_names[electrode_idx],
-                "input_dim": feature_idx,
-                "output_dim": electrode_idx,
-                "lag": lag_idx,
-                "time": lag_idx / sfreq,
-                "coef": fold_coefs[electrode_idx, feature_idx, lag_idx],
-            })
+    # Precompute arrays for fold, feature, electrode, lag, and time
+    folds = np.repeat(np.arange(num_folds), num_electrodes * num_features * num_lags)
+    electrodes = np.tile(np.repeat(np.arange(num_electrodes), num_features * num_lags), num_folds)
+    features = np.tile(np.repeat(np.arange(num_features), num_lags), num_folds * num_electrodes)
+    lags = np.tile(np.arange(num_lags), num_folds * num_electrodes * num_features)
+    times = lags / sfreq
 
-    return pd.DataFrame(trf_df)
+    # Flatten all coefficient arrays
+    coef_flat = np.concatenate([fold_coefs.flatten() for fold_coefs in coefs])
+
+    # Create the DataFrame at once
+    trf_df = pd.DataFrame({
+        "fold": folds,
+        "feature_idx": features,
+        "input_dim": features,
+        "output_dim": electrodes,
+        "lag": lags,
+        "time": times,
+        "coef": coef_flat
+    })
+    trf_df["feature"] = trf_df.feature_idx.map(dict(enumerate(feature_names)))
+    trf_df["output_name"] = trf_df.output_dim.map(dict(enumerate(output_names)))
+
+    return trf_df
 
 
 @dataclass
