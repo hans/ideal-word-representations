@@ -481,7 +481,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
 
         epoch_start_i = max(0, anchor_point + epoch_window[0])
         epoch_end_i = min(data_i.shape[1], anchor_point + epoch_window[1])
-        epoch = data_i[:, epoch_start_i:epoch_end_i]
+        epoch = data_i[:, epoch_start_i:epoch_end_i].copy()
 
         if subset_electrodes is not None:
             epoch = epoch[subset_electrodes]
@@ -492,6 +492,7 @@ def epoch_by_state_space(aligned_dataset: AlignedECoGDataset,
             baseline = data_i[:, baseline_start_i:baseline_end_i]
             if subset_electrodes is not None:
                 baseline = baseline[subset_electrodes]
+            
             epoch -= baseline.mean(axis=1, keepdims=True)
 
         if zscore_mean is not None and zscore_std is not None:
