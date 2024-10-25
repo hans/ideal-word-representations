@@ -830,24 +830,30 @@ rule electrode_study_within_subject:
         unique_variance = "outputs/encoder_unique_variance/{dataset}/baseline/{subject}/unique_variance.csv",
         notebook = "notebooks/encoding/electrode_study_within_subject.ipynb",
         contrasts = "outputs/electrode_contrast/{dataset}/contrasts.csv",
+        encoder_dirs = lambda wildcards: [output for output in all_encoding_outputs(wildcards)
+                                          if wildcards.subject in output],
 
     output:
         dir = directory("outputs/electrode_study/{dataset}/{subject}"),
         notebook = "outputs/electrode_study/{dataset}/{subject}/notebook.ipynb"
 
-    shell:
-        """
+    run:
+        params = {
+            "dataset": wildcards.dataset,
+            "subject": wildcards.subject,
+            "ttest_results_path": input.ttest_results,
+            "scores_path": input.scores,
+            "contrasts_path": input.contrasts,
+            "unique_variance_path": input.unique_variance,
+            "encoder_dirs": list(map(str, input.encoder_dirs)),
+            "output_dir": output.dir,
+        }
+        shell(f"""
         export PYTHONPATH=`pwd`
         papermill --log-output \
             {input.notebook} {output.notebook} \
-            -p dataset {wildcards.dataset} \
-            -p subject {wildcards.subject} \
-            -p ttest_results_path {input.ttest_results} \
-            -p scores_path {input.scores} \
-            -p contrasts_path {input.contrasts} \
-            -p unique_variance_path {input.unique_variance} \
-            -p output_dir {output.dir}
-        """
+            -y "{yaml.safe_dump(params)}"
+        """)
 
 
 all_electrode_study_outputs = lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
