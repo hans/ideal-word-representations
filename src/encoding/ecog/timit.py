@@ -53,7 +53,8 @@ def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileW
     assert keep_elec_idxs == list(range(keep_elecs.shape[0]))
 
     from data_utils import data_loader
-    patient = data_loader.nfm_patient(data_spec.subject)
+    from fomo_config import FoMoConfig
+    patient = data_loader.nfm_patient(FoMoConfig.load(), data_spec.subject)
     task_event_dfs, block_ecog_activity = patient.load_task_ecog(
         "TIMIT", "trial", keep_bands="hga",
         include_task_levels=["trial"])
