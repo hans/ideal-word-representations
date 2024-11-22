@@ -5,6 +5,7 @@ State space analysis tools for integrator models.
 from copy import deepcopy
 from functools import cached_property, wraps
 from dataclasses import dataclass
+import logging
 from typing import Literal, Optional, Union, Any, Callable, Iterable
 
 import h5py
@@ -15,6 +16,8 @@ from tqdm.auto import tqdm
 
 from src.datasets.speech_equivalence import SpeechHiddenStateDataset, SpeechEquivalenceDataset
 
+
+L = logging.getLogger(__name__)
 
 
 @dataclass
@@ -338,9 +341,15 @@ def prepare_state_trajectory(
 
     for i, frame_spec in enumerate(spec.target_frame_spans):
         num_instances = len(frame_spec)
+
         trajectory_frames = np.zeros((num_instances, max_num_frames, embeddings.shape[1]))
+        skip_idxs = []
         for j, (start, end) in enumerate(frame_spec):
             if expand_window is not None:
+                if start < expand_window[0]:
+                    L.warning(f"Skipping instance {j} of label {i} due to insufficient context")
+                    skip_idxs.append(j)
+                    continue
                 start = max(0, start - expand_window[0])
                 end = min(spec.total_num_frames - 1, end + expand_window[1])
 
@@ -357,6 +366,7 @@ def prepare_state_trajectory(
             if end - start + 1 < max_num_frames:
                 trajectory_frames[j, end - start + 1:] = pad_value
 
+        trajectory_frames = np.delete(trajectory_frames, skip_idxs, axis=0)
         ret.append(trajectory_frames)
 
     return ret

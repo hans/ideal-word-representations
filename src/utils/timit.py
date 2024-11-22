@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 import itertools
 import logging
 from pathlib import Path
@@ -364,6 +365,73 @@ def load_or_prepare_timit_corpus(processed_data_dir,
     return corpus
 
 
+def load_cmudict(keep_stress=True) -> dict[str, list[str]]:
+    cmudict_path = "data/cmudict.dict"
+
+    cmudict_entries = defaultdict(list)
+    with open(cmudict_path, "r") as f:
+        for line in f:
+            # remove comments
+            line = re.sub(r'(\s)*#.*', '', line)
+
+            fields = line.strip().split(" ")
+            word = fields[0]
+
+            # remove word idx number, indicating secondary pronunciation
+            word = re.sub(r"\(\d\)$", "", word)
+
+            phones = tuple(fields[1:])
+
+            if not keep_stress:
+                # remove stress markers
+                phones = tuple(re.sub(r"\d", "", p) for p in phones)
+
+            cmudict_entries[word].append(phones)
+
+    return dict(cmudict_entries)
+
+
+def load_stress_patterns() -> pd.DataFrame:
+    """
+    Load word stress patterns from CMUDict.
+    Returns a dataframe with an index of word, and columns for each syllable position in the word.
+    Each value corresponds to the number of attested pronunciations with primary stress at that
+    syllable position.
+
+    Helper columns `stress_primary_initial`, `stress_primary_noninitial`, and `stress_primary_final`
+    indicate whether ANY pronunciation of the word has primary stress in the initial, non-initial, or final
+    syllable position, respectively.
+    """
+    cmudict_entries = load_cmudict(keep_stress=True)
+
+    cmudict_stress_sequences = {
+        word: [tuple(map(lambda xs: int(xs[0]),
+                        filter(None, [re.findall(r"[A-Z]+(\d+)", phoneme)
+                                    for phoneme in pron])))
+            for pron in prons]
+        for word, prons in cmudict_entries.items()
+    }
+    cmudict_stress_sequences = {
+        word: Counter(prons) for word, prons in cmudict_stress_sequences.items()
+    }
+
+    # convert to dataframe, only retaining contrast of primary stress vs. not
+    # (erases distinction between secondary stress and unstressed)
+    stress_patterns = [(word, pos, value == 1) for word, stress_counter in cmudict_stress_sequences.items()
+                       for attested_stress in stress_counter
+                       for pos, value in enumerate(attested_stress)]
+    
+    stress_data = pd.DataFrame(stress_patterns, columns=["word", "position", "stress"]) \
+        .pivot_table(index="word", columns="position", values="stress", aggfunc="sum")
+    stress_position = stress_data.idxmax(axis=1)
+    num_vowels = stress_data.isna().idxmax(axis=1) - 1
+    stress_data["stress_primary_noninitial"] = stress_data[stress_data.columns[1:]].sum(axis=1) > 0
+    stress_data["stress_primary_final"] = stress_position == num_vowels
+    stress_data["stress_primary_initial"] = stress_data[0] > 0
+    
+    return stress_data
+
+
 def get_word_metadata(word_state_space, num_frequency_quantiles=3):
     """
     Augment the given word state space with linguistic data.
@@ -404,10 +472,14 @@ def get_word_metadata(word_state_space, num_frequency_quantiles=3):
     word_metadata["word_frequency_quantile"] = pd.qcut(word_metadata.word_frequency, num_frequency_quantiles, labels=list(map(str, np.arange(num_frequency_quantiles))))
     print(word_metadata.groupby("word_frequency_quantile").apply(lambda xs: xs.sample(5).index.get_level_values("label").to_list()))
 
-    word_phoneme_metadata = word_state_space.cuts.xs("phoneme", level="level") \
-        .groupby(["label", "instance_idx", "item_idx"]).apply(
-            lambda xs: pd.Series({"onset_phoneme": xs.iloc[0].description,
-                                "onset_biphone": xs.description.iloc[:2].str.cat(sep=" ")}))
+    word_metadata["onset_phoneme"] = word_state_space.cuts.xs("phoneme", level="level") \
+        .groupby(["label", "instance_idx"]).first().description
 
-    return pd.merge(word_metadata, word_phoneme_metadata, left_index=True, right_index=True,
-                    how="left", validate="one_to_one")
+    # add stress information
+    stress_patterns = load_stress_patterns()
+    ret = pd.merge(word_metadata, stress_patterns[["stress_primary_initial", "stress_primary_noninitial",
+                                         "stress_primary_final"]],
+                   left_on="word_freq_lookup", right_index=True, how="left",
+                   validate="m:1")
+    
+    return ret

@@ -1,6 +1,9 @@
 import itertools
+import sys
 from typing import Any
 import yaml
+
+import papermill
 
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 HTTP = HTTPRemoteProvider()
@@ -35,8 +38,8 @@ ALL_MODEL_NOTEBOOKS = [
     "state_space",
     "trf",
     "within_word_gradience",
+    "word_boundary",
     "word_discrimination",
-    "word_id",
 
     "geometry/analogy",
     "geometry/analogy_dynamic",
@@ -49,6 +52,7 @@ ENCODING_DATASET = "timit-no_repeats"
 DEFAULT_PHONEME_EQUIVALENCE = "phoneme_10frames"
 
 FOMO_LIBRARY_PATH = "/userdata/jgauthier/projects/neural-foundation-models:/userdata/jgauthier/projects/neural-foundation-models/data_utils"
+sys.path.append(FOMO_LIBRARY_PATH)
 
 
 def select_gpu_device(wildcards, resources):
@@ -848,12 +852,10 @@ rule electrode_study_within_subject:
             "encoder_dirs": list(map(str, input.encoder_dirs)),
             "output_dir": output.dir,
         }
-        shell(f"""
-        export PYTHONPATH=`pwd`
-        papermill --log-output \
-            {input.notebook} {output.notebook} \
-            -y "{yaml.safe_dump(params)}"
-        """)
+        papermill.execute_notebook(
+            input.notebook, output.notebook,
+            parameters=params,
+            log_output=True)
 
 
 all_electrode_study_outputs = lambda _: [f"outputs/electrode_study/{ENCODING_DATASET}/{subject}/"
