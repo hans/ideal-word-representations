@@ -78,6 +78,16 @@ models:
     model: discrim-rnn_32-mAP3
     equivalence: word_broad_10frames
 
+  # LS discriminative model with fixed start frame
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP1
+    equivalence: word_broad_10frames_fixedlen25
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP2
+    equivalence: word_broad_10frames_fixedlen25
+
 encoding:
   data:
     - subject: EC152
@@ -120,10 +130,10 @@ encoding:
     - subject: EC243
       blocks:
         - B1
-    # todo not available
-    # - subject: EC279
-    #   blocks:
-    #     - B1
+    - subject: EC279
+      data_source: fomo
+      blocks:
+        - B1
     - subject: EC250
       blocks:
         - B1
@@ -143,6 +153,10 @@ encoding:
     - subject: EC282
       blocks:
         - B18
+    - subject: EC287
+      data_source: fomo
+      blocks:
+        - B1
 
   model_comparisons:
     - model2: biphone_recon-w2v2_8-l2norm
@@ -167,6 +181,8 @@ encoding:
       model1: baseline
     - model2: ph-ls-word_broad_fixed-hinge-w2v2_8-l2norm
       model1: baseline
+    - model1: ph-ls-word_broad_fixed-hinge-w2v2_8-discrim2-l2norm
+      model2: baseline
     - model2: ph-syllable-w2v2_8-l2norm
       model1: baseline
     - model2: ph-ls-word_broad-hinge-w2v2_8-discrim1-l2norm
@@ -174,8 +190,8 @@ encoding:
     - model2: ph-ls-word_broad-hinge-w2v2_8-discrim2-l2norm
       model1: baseline
 
-    # - model2: word_broad-aniso2-w2v2_8
-    #   model1: baseline_aud
+    - model2: ph-ls-word_broad-hinge-w2v2_8-l2norm
+      model1: baseline_aud
 
   permutation_tests:
     units:
