@@ -39,7 +39,7 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     # Pick a max length that accommodates the majority of the samples,
     # excluding outlier lengths
     evident_lengths = equiv_dataset.lengths
-    evident_lengths = evident_lengths[evident_lengths != -1]
+    evident_lengths = evident_lengths[evident_lengths > 0]
     target_length = int(torch.quantile(evident_lengths.double(), 0.95).item())
 
     num_examples, train_dataset, eval_dataset = integrator.prepare_dataset(
