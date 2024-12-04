@@ -464,8 +464,6 @@ def iter_dataset(equiv_dataset_path: str,
     F = hidden_state_dataset.states
 
     lengths = torch.minimum(equiv_dataset.lengths, torch.tensor(max_length))
-    # TODO understand why we have zero-length examples
-    lengths[lengths == 0] = 1
 
     if select_idxs is not None:
         assert (equiv_dataset.Q[select_idxs] != -1).all()
@@ -482,7 +480,7 @@ def iter_dataset(equiv_dataset_path: str,
     # infinite generation
     while True:
         for i in non_null_frames:
-            if lengths[i] == -1:
+            if lengths[i] <= 0:
                 continue
 
             pos_indices = equiv_dataset.class_to_frames[equiv_dataset.Q[i].item()]  # class_to_frames[equiv_dataset.Q[i].item()]
