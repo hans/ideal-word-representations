@@ -502,6 +502,7 @@ def iter_dataset(equiv_dataset_path: str,
 
                 # Sanity checks
                 assert lengths[i] > 0
+                assert lengths[equiv_dataset.S[i]] > 0
                 assert lengths[pos_idx] > 0
                 # assert lengths[neg_idx] > 0
                 assert equiv_dataset.Q[i] != -1
@@ -576,6 +577,7 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
                        equiv_dataset: SpeechEquivalenceDataset,
                        hidden_state_dataset: SpeechHiddenStateDataset,
                        batch_size=16,
+                       max_num_frames=None,
                        device=None) -> torch.Tensor:
     """
     Compute integrator embeddings for a given model on a speech
@@ -592,7 +594,8 @@ def compute_embeddings(model: ContrastiveEmbeddingModel,
     
     lengths = equiv_dataset.lengths.to(device)
 
-    for batch_start in trange(0, hidden_state_dataset.num_frames, batch_size):
+    max_num_frames = max_num_frames or hidden_state_dataset.num_frames
+    for batch_start in trange(0, max_num_frames, batch_size):
         batch_idxs = torch.arange(batch_start, min(batch_start + batch_size, hidden_state_dataset.num_frames))
         batch = torch.stack([get_sequence(F, equiv_dataset.S[idx], idx, model.config.max_length, layer=0)
                              for idx in batch_idxs])

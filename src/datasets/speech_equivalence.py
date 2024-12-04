@@ -226,8 +226,13 @@ class SpeechEquivalenceDataset:
     
     @cached_property
     def lengths(self):
-        lengths = torch.arange(self.S.shape[0]) - self.S
-        lengths[self.S == -1] = -1
+        """
+        For each frame, the distance between the right edge of this frame and the start of the
+        class instance. Integer on [1, num_frames) if this frame is part of a class instance,
+        and 0 otherwise.
+        """
+        lengths = torch.arange(self.S.shape[0]) - self.S + 1
+        lengths[self.S == -1] = 0
         return lengths
 
     @contextmanager
