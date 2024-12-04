@@ -43,26 +43,61 @@ def load_out_file(path) -> dict[str, OutFile]:
 
 
 def prepare_out_file_fomo(config: DictConfig, data_spec: DictConfig) -> OutFileWithAnnotations:
-    data_dir = Path(config.corpus.paths.ecog_path) / data_spec.subject
-
     # prepare list of grid electrode indices
     electrode_df = get_electrode_df(config, data_spec.subject)
     keep_elecs = electrode_df[electrode_df.type == "grid"]
-    # grid electrodes should start at 0 and be contiguous
+    
     keep_elec_idxs = keep_elecs.index.get_level_values("electrode_idx").tolist()
-    assert keep_elec_idxs == list(range(keep_elecs.shape[0]))
+    if keep_elec_idxs != list(range(keep_elecs.shape[0])):
+        # grid electrodes should start at 0 and be contiguous. we can definitely incorporate
+        # other grids but it would require more careful handling on the results end
+        drop_point = next((i for i, x in enumerate(keep_elec_idxs) if x != i), None)
+        if drop_point == 0:
+            L.error("Grid electrodes do not start at 0; skipping")
+            return []
+        elif drop_point is not None:
+            drop_point -= 1
+            L.warning(f"Non-contiguous grid electrodes detected; dropping after {keep_elec_idxs[drop_point]}")
+            keep_elec_idxs = keep_elec_idxs[:drop_point]
+
+    if len(keep_elec_idxs) == 0:
+        L.warning("No grid electrodes found; skipping")
+        return []
 
     from data_utils import data_loader
     from fomo_config import FoMoConfig
     patient = data_loader.nfm_patient(FoMoConfig.load(), data_spec.subject)
-    task_event_dfs, block_ecog_activity = patient.load_task_ecog(
+    ecog_data = patient.load_task_ecog(
         "TIMIT", "trial", keep_bands="hga",
         include_task_levels=["trial"])
+
+    if ecog_data is None:
+        return []
+    task_event_dfs, block_ecog_activity = ecog_data
 
     # sanity checks
     assert len(block_ecog_activity) == len(task_event_dfs)
     for block_ecog, task_event_df in zip(block_ecog_activity, task_event_dfs):
         assert len(block_ecog) == len(task_event_df)
+
+    if len(block_ecog_activity) == 0:
+        # no trials. stop
+        return []
+    
+    # if some blocks have fewer numbers of electrodes, subset the electrodes in all blocks to match this
+    # assume that alignment of electrodes between remaining channels is correct
+    block_channel_counts = [block_ecog_i[0].shape[1] for block_ecog_i in block_ecog_activity
+                            if len(block_ecog_i) > 0]
+    if len(set(block_channel_counts)) > 1:
+        L.warning(f"Blocks have different numbers of electrodes: {block_channel_counts}. Subsetting to minimum of {min(block_channel_counts)}")
+        min_channels = min(block_channel_counts)
+        block_ecog_activity = [[trial_ecog[:, :min_channels] for trial_ecog in block_ecog_i]
+                               for block_ecog_i in block_ecog_activity]
+
+        if max(keep_elec_idxs) >= min_channels:
+            L.warning(f"Keeping electrodes {keep_elec_idxs} but only {min_channels} are "
+                       "available in all blocks; subsetting")
+            keep_elec_idxs = [x for x in keep_elec_idxs if x < min_channels]
 
     # compute average HGA over 8 bands; subset grid electrodes
     all_trials = [[trial[:, keep_elec_idxs].mean(axis=0) for trial in block_ecog]
