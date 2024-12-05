@@ -1,0 +1,11 @@
+
+# _objective_0f218_00029_29_hidden_dim=256,learning_rate=0.0008,weight_decay=0.0018_2024-12-04_12-33-46
+hidden_dim: 256
+learning_rate: 0.000797041423089869
+weight_decay: 0.0017910276390244763
+
+
+output_dim: 8
+
+in_batch_soft_negatives: false
+loss_form: classification
