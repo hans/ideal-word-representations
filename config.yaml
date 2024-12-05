@@ -7,11 +7,17 @@ datasets:
 
 models:
 
-  # discriminative word model
+  # LS discriminative models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
-    model: discrim-rnn_32
+    model: discrim-rnn_32-mAP1
     equivalence: word_broad_10frames
+
+  # LS discriminative model with fixed start frame
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP1
+    equivalence: word_broad_10frames_fixedlen25
 
   # feedforward word model
   - base_model: w2v2_8
@@ -19,16 +25,27 @@ models:
     model: ff_32
     equivalence: word_broad_10frames
 
-  # librispeech other models
+  # discriminative phoneme model
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
-    model: rnn_8-weightdecay0.01
+    model: discrim-rnn_8-mAP1
     equivalence: phoneme_10frames
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
-    model: rnn_8-weightdecay0.01
-    equivalence: syllable_10frames
-  # librispeech random models
+    model: discrim-rnn_8-mAP2
+    equivalence: phoneme_10frames
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_8-mAP3
+    equivalence: phoneme_10frames
+
+  # librispeech other models
+  # - base_model: w2v2_8
+  #   dataset: librispeech-train-clean-100
+  #   model: rnn_8-weightdecay0.01
+  #   equivalence: syllable_10frames
+
+  # random baselines
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
     model: randomrnn_8
@@ -46,47 +63,6 @@ models:
     model: randomff_32
     equivalence: random
 
-  # LS hinge mAP-maximizing phoneme models
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_8-hinge_ph-mAP1
-    equivalence: phoneme_10frames
-
-  # LS hinge mAP-maximizing word models
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge-mAP4
-    equivalence: word_broad_10frames
-
-  # LS mAP model but with fixed start frame
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: rnn_32-hinge-mAP4
-    equivalence: word_broad_10frames_fixedlen25
-
-  # LS discriminative models
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: discrim-rnn_32-mAP1
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: discrim-rnn_32-mAP2
-    equivalence: word_broad_10frames
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: discrim-rnn_32-mAP3
-    equivalence: word_broad_10frames
-
-  # LS discriminative model with fixed start frame
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: discrim-rnn_32-mAP1
-    equivalence: word_broad_10frames_fixedlen25
-  - base_model: w2v2_8
-    dataset: librispeech-train-clean-100
-    model: discrim-rnn_32-mAP2
-    equivalence: word_broad_10frames_fixedlen25
 
 encoding:
   data:
@@ -159,39 +135,23 @@ encoding:
         - B1
 
   model_comparisons:
-    - model2: biphone_recon-w2v2_8-l2norm
-      model1: baseline
-    - model2: biphone_pred-w2v2_8-l2norm
-      model1: baseline
     - model2: random8-w2v2_8-l2norm
       model1: baseline
     - model2: random32-w2v2_8-l2norm
       model1: baseline
 
-    # # with l2 normalization
-    # - model2: ls-word_broad-hinge-w2v2_8-l2norm
-    #   model1: baseline
-    # - model2: ls-word_broad_fixed-hinge-w2v2_8-l2norm
-    #   model1: baseline
     - model2: phoneme-w2v2_8-l2norm
       model1: baseline
 
-    # one impulse per phoneme rather than one impulse per unit
-    - model2: ph-ls-word_broad-hinge-w2v2_8-l2norm
-      model1: baseline
-    - model2: ph-ls-word_broad_fixed-hinge-w2v2_8-l2norm
-      model1: baseline
-    - model1: ph-ls-word_broad_fixed-hinge-w2v2_8-discrim2-l2norm
+    # librispeech models
+    - model1: ph-ls-word_broad_fixed-w2v2_8-discrim2-l2norm
       model2: baseline
-    - model2: ph-syllable-w2v2_8-l2norm
+    - model2: ph-ls-word_broad-w2v2_8-discrim1-l2norm
       model1: baseline
-    - model2: ph-ls-word_broad-hinge-w2v2_8-discrim1-l2norm
+    - model2: ph-ls-word_broad-w2v2_8-discrim2-l2norm
       model1: baseline
-    - model2: ph-ls-word_broad-hinge-w2v2_8-discrim2-l2norm
+    - model2: ph-ls-phoneme-w2v2_8-discrim1-l2norm
       model1: baseline
-
-    - model2: ph-ls-word_broad-hinge-w2v2_8-l2norm
-      model1: baseline_aud
 
   permutation_tests:
     units:
