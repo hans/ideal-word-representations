@@ -160,6 +160,8 @@ encoding:
       model1: baseline
     - model2: ph-ls-phoneme-w2v2_8-discrim1-l2norm
       model1: baseline
+    - model2: ph-ls-phoneme-w2v2_8-discrim2-l2norm
+      model1: baseline
 
   permutation_tests:
     units:
