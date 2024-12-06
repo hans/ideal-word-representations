@@ -34,10 +34,20 @@ models:
     dataset: librispeech-train-clean-100
     model: discrim-rnn_8-mAP2
     equivalence: phoneme_10frames
+  # - base_model: w2v2_8
+  #   dataset: librispeech-train-clean-100
+  #   model: discrim-rnn_8-mAP3
+  #   equivalence: phoneme_10frames
+
+  # fixed-length phoneme model
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
-    model: discrim-rnn_8-mAP3
-    equivalence: phoneme_10frames
+    model: discrim-rnn_8-mAP1
+    equivalence: phoneme_10frames_fixedlen25
+  - base_model: w2v2_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_8-mAP2
+    equivalence: phoneme_10frames_fixedlen25
 
   # librispeech other models
   # - base_model: w2v2_8
