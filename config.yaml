@@ -118,10 +118,6 @@ encoding:
     - subject: EC243
       blocks:
         - B1
-    - subject: EC279
-      data_source: fomo
-      blocks:
-        - B1
     - subject: EC250
       blocks:
         - B1
