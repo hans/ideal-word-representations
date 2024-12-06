@@ -88,15 +88,17 @@ encoding:
       fit_channels:
         start: 0
         end: 384
-
-    # missing TIMIT events?
-    # - subject: EC208
-    #   data_source: fomo
-    #   blocks:
-    #     - B1
     - subject: EC260
       blocks:
         - B1
+
+    # big-trf subjects
+    - subject: EC100
+      data_source: fomo
+    - subject: EC172
+      data_source: fomo
+    - subject: EC242
+      data_source: fomo
 
     # remaining Barakeet subjects
     - subject: EC248
