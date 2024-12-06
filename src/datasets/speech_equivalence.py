@@ -100,7 +100,7 @@ class SpeechHiddenStateDataset:
 
     # ratio of num_frames to original audio num_samples. useful for 
     # aligning frames with annotations in the original audio.
-    compression_ratios: list[float]
+    compression_ratios: dict[int, float]
 
     # mapping from flattened frame index to (item index, frame index)
     flat_idxs: list[tuple[int, int]]
@@ -121,11 +121,27 @@ class SpeechHiddenStateDataset:
         return f"SpeechHiddenStateDataset({self.model_name}, {self.num_items} items, {self.num_frames} frames, {self.num_layers} layers, {self.states.shape[2]} hidden size)"
     __str__ = __repr__
 
+    def __getitem__(self, slice_) -> "SpeechHiddenStateDataset":
+        if not isinstance(slice_, slice):
+            raise ValueError()
+
+        new_states = self.states[slice_]
+        new_flat_idxs = self.flat_idxs[slice_.start:slice_.stop]
+
+        new_item_idxs = sorted(set(np.array(new_flat_idxs)[:, 0]))
+        new_compression_ratios = {idx: self.compression_ratios[idx] for idx in new_item_idxs}
+
+        return replace(self, states=new_states, flat_idxs=new_flat_idxs, compression_ratios=new_compression_ratios)
+
     def to_hdf5(self, path: str):
+        # need contiguous keys in compression_ratios
+        assert set(self.compression_ratios.keys()) == set(range(len(self.compression_ratios)))
+        compression_ratios = np.array([self.compression_ratios[idx] for idx in range(len(self.compression_ratios))])
+
         with h5py.File(path, "w") as f:
             f.attrs["model_name"] = self.model_name
             f.create_dataset("states", data=self.states.numpy())
-            f.create_dataset("compression_ratios", data=self.compression_ratios, dtype=np.float32)
+            f.create_dataset("compression_ratios", data=compression_ratios, dtype=np.float32)
             f.create_dataset("flat_idxs", data=self.flat_idxs, dtype=np.int32)
     
     @classmethod
@@ -133,7 +149,10 @@ class SpeechHiddenStateDataset:
         f = h5py.File(path, "r")
         model_name = f.attrs["model_name"]
         states = f["states"]  # NB not loading into memory
+
         compression_ratios = f["compression_ratios"][:]
+        compression_ratios = {idx: ratio for idx, ratio in enumerate(compression_ratios)}
+
         flat_idxs = f["flat_idxs"][:]
 
         return cls(model_name=model_name, states=states,

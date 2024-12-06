@@ -442,6 +442,7 @@ def iter_dataset(equiv_dataset_path: str,
                  num_examples: Optional[int] = None,
                  layer: Optional[int] = None,
                  select_idxs: Optional[list[int]] = None,
+                 smoke_test=False,
                  infinite=True) -> Iterator[dict]:
     # Implementation note: because this function is invoked from the Datasets generator
     # pipeline, we pass paths rather than objects so that the relevant inputs don't get
@@ -449,13 +450,15 @@ def iter_dataset(equiv_dataset_path: str,
     equiv_dataset = torch.load(equiv_dataset_path)
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
 
-    # # DEV
-    # equiv_dataset.Q = equiv_dataset.Q[:10000]
-    # if select_idxs is not None:
-    #     select_idxs = select_idxs[select_idxs < equiv_dataset.Q.shape[0]]
-    # equiv_dataset.Q = torch.clamp(equiv_dataset.Q, min=-1, max=5)
-    # class_to_frames = {cl: [f for f in equiv_dataset.class_to_frames[cl] if f < equiv_dataset.Q.shape[0]]
-    #                    for cl in range(6)}
+    if smoke_test:
+        equiv_dataset.Q = equiv_dataset.Q[:10000]
+        if select_idxs is not None:
+            select_idxs = select_idxs[select_idxs < equiv_dataset.Q.shape[0]]
+        equiv_dataset.Q = torch.clamp(equiv_dataset.Q, min=-1, max=5)
+        class_to_frames = {cl: [f for f in equiv_dataset.class_to_frames[cl] if f < equiv_dataset.Q.shape[0]]
+                           for cl in range(6)}
+    else:
+        class_to_frames = equiv_dataset.class_to_frames
 
     if layer is None:
         if hidden_state_dataset.num_layers > 1:
@@ -483,7 +486,7 @@ def iter_dataset(equiv_dataset_path: str,
             if lengths[i] <= 0:
                 continue
 
-            pos_indices = equiv_dataset.class_to_frames[equiv_dataset.Q[i].item()]  # class_to_frames[equiv_dataset.Q[i].item()]
+            pos_indices = class_to_frames[equiv_dataset.Q[i].item()]
 
             if len(pos_indices) > 1:
                 # get non-identical positive example
@@ -500,7 +503,6 @@ def iter_dataset(equiv_dataset_path: str,
 
                 # Sanity checks
                 assert lengths[i] > 0
-                assert lengths[equiv_dataset.S[i]] > 0
                 assert lengths[pos_idx] > 0
                 # assert lengths[neg_idx] > 0
                 assert equiv_dataset.Q[i] != -1
