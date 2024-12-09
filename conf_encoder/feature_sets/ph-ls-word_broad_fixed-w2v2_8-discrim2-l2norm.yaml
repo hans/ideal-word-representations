@@ -6,7 +6,7 @@ baseline_features:
   - F0
 
 model_features:
-  ph-ls-word_broad-w2v2_8-discrim2-l2norm:
+  ph-ls-word_broad_fixed-w2v2_8-discrim2-l2norm:
     train_dataset: librispeech-train-clean-100
     base_model: w2v2_8
     model: discrim-rnn_32-mAP2
