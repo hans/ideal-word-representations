@@ -450,6 +450,7 @@ def iter_dataset(equiv_dataset_path: str,
     equiv_dataset = torch.load(equiv_dataset_path)
     hidden_state_dataset = SpeechHiddenStateDataset.from_hdf5(hidden_states_path)
 
+    class_to_frames = None
     if smoke_test:
         equiv_dataset.Q = equiv_dataset.Q[:10000]
         if select_idxs is not None:
@@ -457,8 +458,6 @@ def iter_dataset(equiv_dataset_path: str,
         equiv_dataset.Q = torch.clamp(equiv_dataset.Q, min=-1, max=5)
         class_to_frames = {cl: [f for f in equiv_dataset.class_to_frames[cl] if f < equiv_dataset.Q.shape[0]]
                            for cl in range(6)}
-    else:
-        class_to_frames = equiv_dataset.class_to_frames
 
     if layer is None:
         if hidden_state_dataset.num_layers > 1:
@@ -480,11 +479,15 @@ def iter_dataset(equiv_dataset_path: str,
         if num_examples is not None:
             non_null_frames = np.random.choice(non_null_frames.numpy(), num_examples, replace=False)
 
+    # load class_to_frames now that dataset subsetting is done
+    if class_to_frames is None:
+        class_to_frames = equiv_dataset.class_to_frames
+
     # infinite generation
     while True:
         for i in non_null_frames:
-            if lengths[i] <= 0:
-                continue
+            # Sanity checks
+            assert lengths[i] > 0
 
             pos_indices = class_to_frames[equiv_dataset.Q[i].item()]
 
@@ -502,7 +505,6 @@ def iter_dataset(equiv_dataset_path: str,
                 neg_seq = None  # get_sequence(F, equiv_dataset.S[neg_idx], neg_idx, max_length)
 
                 # Sanity checks
-                assert lengths[i] > 0
                 assert lengths[pos_idx] > 0
                 # assert lengths[neg_idx] > 0
                 assert equiv_dataset.Q[i] != -1
