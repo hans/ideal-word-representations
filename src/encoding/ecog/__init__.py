@@ -298,7 +298,8 @@ class AlignedECoGDataset:
                     instance_idx=traj_instance_idx,
 
                     span_secs=(traj_start_secs, traj_end_secs),
-                    span_model_frames=(traj_start, traj_end),
+                    span_model_frames=(traj_start - item_frame_start,
+                                       traj_end - item_frame_start),
                     span_ecog_samples=(traj_start_ecog, traj_end_ecog),
                     span_ecog_samples_nopad=(traj_start_ecog_nopad, traj_end_ecog_nopad),
 

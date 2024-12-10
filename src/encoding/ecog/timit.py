@@ -250,6 +250,10 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
         unit_start = traj.item_start_frame + traj.span_model_frames[0]
         unit_end = traj.item_start_frame + traj.span_model_frames[1]
 
+        # sanity check
+        if unit_start > model.embeddings.shape[0] or unit_end > model.embeddings.shape[0]:
+            raise ValueError("Unit span out of bounds for model embeddings")
+
         # Prepare embedding of the given unit
         unit_embedding = None
         if feature_spec.featurization == "last_frame":
@@ -276,6 +280,10 @@ def load_and_align_model_embeddings(config, out: OutFileWithAnnotations):
 
     embedding_scatter_samples = np.array(embedding_scatter_samples)
     embedding_scatter_data = np.array(embedding_scatter_data)
+
+    if np.isnan(embedding_scatter_data).any():
+        raise ValueError("NaNs detected in model embeddings")
+
     if feature_spec.permute == "permute_units":
         # Permute mapping between token units and their embeddings
         perm = np.random.permutation(embedding_scatter_data.shape[0])
