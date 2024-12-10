@@ -325,11 +325,15 @@ def prepare_xy(config: DictConfig, data_spec: DictConfig,
 
     # add model embeddings to out
     if getattr(config.feature_sets, "model_features", None):
-        out = load_and_align_model_embeddings(config, out)
-        feature_sets.append("model_embedding")
+        model_config = next(iter(config.feature_sets.model_features.values()))
+        # model config may be present but not complete. only run if we have a full
+        # model spec
+        if getattr(model_config, "model", None):
+            out = load_and_align_model_embeddings(config, out)
+            feature_sets.append("model_embedding")
 
-        center_features.append(False)
-        scale_features.append(False)
+            center_features.append(False)
+            scale_features.append(False)
 
     fit_response_dimensions = None
     if "fit_channels" in data_spec:
