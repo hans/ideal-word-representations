@@ -555,7 +555,7 @@ def make_encoder_data_spec(include_subjects=None):
     data_spec = [{"block": block,
                   **{k: v for k, v in d.items() if k != "blocks"}}
                  for d in data_spec
-                 for block in (d["blocks"] if d["blocks"] is not None else [None])]
+                 for block in (d.get("blocks") if d.get("blocks") is not None else [None])]
 
     return hydra_param(data_spec)
 
