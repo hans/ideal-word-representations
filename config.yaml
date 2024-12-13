@@ -152,8 +152,8 @@ encoding:
       model1: baseline
 
     # librispeech models
-    - model1: ph-ls-word_broad_fixed-w2v2_8-discrim2-l2norm
-      model2: baseline
+    - model2: ph-ls-word_broad_fixed-w2v2_8-discrim2-l2norm
+      model1: baseline
     - model2: ph-ls-word_broad-w2v2_8-discrim1-l2norm
       model1: baseline
     - model2: ph-ls-word_broad-w2v2_8-discrim2-l2norm
