@@ -38,8 +38,10 @@ ALL_MODEL_NOTEBOOKS = [
     "state_space",
     "trf",
     "within_word_gradience",
-    "word_boundary",
     "word_discrimination",
+
+    "word_boundary",
+    "syllable_boundary",
 
     "geometry/analogy",
     "geometry/analogy_dynamic",
