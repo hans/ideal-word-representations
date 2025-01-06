@@ -169,6 +169,17 @@ class StateSpaceAnalysisSpec:
         Return a copy of the current state space analysis spec with at most
         `max_instances_per_label` instances per label.
         """
+        new_labels = self.labels
+        converting_labels = False
+        if any(isinstance(label, tuple) for label in self.labels):
+            # concat will fail if labels are tuples; pandas will try to turn this into
+            # a multiindex.
+            # HACK for now is to turn into a string representation.
+            # this may produce inconsistency
+            converting_labels = True
+            L.warning("Subsampling instances with tuple labels; this may produce inconsistent results")
+            new_labels = [" ".join(label) for label in self.labels]
+
         new_target_frame_spans, new_cuts = [], {}
         for label, frame_spans in zip(self.labels, self.target_frame_spans):
             if len(frame_spans) <= max_instances_per_label:
@@ -190,11 +201,18 @@ class StateSpaceAnalysisSpec:
                 new_cuts_i = new_cuts_i.set_index("instance_idx", append=True).reorder_levels(["instance_idx", "level"])
                 new_cuts[label] = new_cuts_i
 
-        new_cuts = pd.concat(new_cuts, names=["label"]).sort_index() if self.cuts is not None else None
+        if self.cuts is not None:
+            if converting_labels:
+                new_cuts = pd.concat(new_cuts.values(), keys=[" ".join(label) for label in new_cuts.keys()],
+                                     names=["label"]).sort_index()
+            else:
+                new_cuts = pd.concat(new_cuts, names=["label"]).sort_index()
+        else:
+            new_cuts = None
 
         return StateSpaceAnalysisSpec(
             total_num_frames=self.total_num_frames,
-            labels=self.labels,
+            labels=new_labels,
             target_frame_spans=new_target_frame_spans,
             cuts=new_cuts,
         )
