@@ -1,3 +1,4 @@
 name: w2v2-large_20
 model_ref: facebook/wav2vec2-large
 layer: 20
+pseudo_causal: false

@@ -7,6 +7,11 @@ datasets:
 
 models:
 
+  - base_model: w2v2_pc_8
+    dataset: librispeech-train-clean-100
+    model: discrim-rnn_32-mAP1
+    equivalence: word_broad_10frames
+
   # LS discriminative models
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
