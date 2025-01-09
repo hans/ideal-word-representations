@@ -91,7 +91,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
             batch_hidden_states = output.hidden_states[layer][torch.arange(real_batch_size), torch.arange(real_batch_size)].cpu()
             assert len(batch_hidden_states) == real_batch_size
             frame_states_list.append(batch_hidden_states)
-            flat_idxs.extend([(idx, j) for j in range(i, i + real_batch_size)])
+            flat_idxs.extend([(idx, j - 1) for j in range(i, i + real_batch_size)])
 
         compression_ratios[idx] = frame_counts[-1].item() / audio_length
 
