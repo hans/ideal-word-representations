@@ -305,10 +305,11 @@ rule extract_embeddings:
 
 
 
-# rule extract_all_embeddings:
-#     input:
-#         expand("outputs/model_embeddings/{model_spec}/embeddings.npy",
-#                 model_spec=MODEL_SPEC_LIST)
+EMBEDDING_LIST = [f"{m['dataset']}/{m['base_model']}/{m['model']}/{m['equivalence']}/{m['dataset']}.npy" for m in config["models"]]
+rule extract_all_embeddings:
+    input:
+        expand("outputs/model_embeddings/{embedding}",
+                embedding=EMBEDDING_LIST)
 
 rule compute_state_spaces:
     input:
