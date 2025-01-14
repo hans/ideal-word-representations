@@ -29,6 +29,7 @@ feature_extractor:
 training_args:
   per_device_train_batch_size: 32
   evaluation_strategy: steps
+  save_strategy: steps
   num_train_epochs: 2
   gradient_accumulation_steps: 2
   save_steps: 100
