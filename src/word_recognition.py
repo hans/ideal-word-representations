@@ -201,6 +201,8 @@ def train(config: DictConfig):
             all_test_evaluations.append(trainer.evaluate(test_dataset))
 
             test_output = trainer.predict(test_dataset)
+            assert test_output.predictions is not None
+            assert test_output.label_ids is not None
             model_logits: np.ndarray = test_output.predictions
             predicted_label_idx = model_logits.argmax(axis=1)
 
