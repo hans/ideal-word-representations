@@ -110,6 +110,8 @@ def train(config: DictConfig):
     elif config.trainer.mode == "no_train":
         total_num_examples = 0
         train_dataset, eval_dataset = None, None
+        config.training_args.evaluation_strategy = None
+        config.training_args.save_strategy = "no"
         max_length = equiv_dataset.lengths.max().item()
     else:
         raise ValueError(f"Invalid trainer mode: {config.trainer.mode}")
@@ -176,7 +178,7 @@ def train(config: DictConfig):
             n_trials=hparam_config.n_trials,
             hp_space=hp_space,
             compute_objective=hyperparameter_objective,
-            resources_per_trial={"gpu": 0.19, "cpu": 1},
+            resources_per_trial={"gpu": 0.32, "cpu": 1},
             scheduler=instantiate(hparam_config.scheduler,
                                   mode=HYPERPARAMETER_OBJECTIVE_DIRECTION[:3]),
         )
