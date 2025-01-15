@@ -21,10 +21,11 @@ def extract_hidden_states(dataset: datasets.Dataset,
                           processor: transformers.Wav2Vec2Processor,
                           layer: int,
                           pseudo_causal: bool = False,
-                          batch_size=8) -> SpeechHiddenStateDataset:
+                          batch_size=12) -> SpeechHiddenStateDataset:
     flat_idxs = []
     frame_states_list = []
     compression_ratios = {}
+    model.eval()
 
     def collate_batch(batch):
         batch = processor.pad(
@@ -70,6 +71,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
         # We want the output at frame i to have input sufficient for computing up and through
         # frame i. So we should map output frame i to input keypoint i+1.
         for i in range(1, frame_keypoints.shape[0], batch_size):
+            batch_frame_targets = torch.arange(i, min(i + batch_size, frame_keypoints.shape[0]))
             batch_keypoints = frame_keypoints[i:i + batch_size]
             batch_length = max(batch_keypoints)
             real_batch_size = batch_keypoints.shape[0]
@@ -88,7 +90,7 @@ def extract_hidden_states(dataset: datasets.Dataset,
                               input_values=batch_inputs,
                               attention_mask=attention_mask[:real_batch_size, :batch_length])
 
-            batch_hidden_states = output.hidden_states[layer][torch.arange(real_batch_size), torch.arange(real_batch_size)].cpu()
+            batch_hidden_states = output.hidden_states[layer][torch.arange(real_batch_size), batch_frame_targets - 1].cpu()
             assert len(batch_hidden_states) == real_batch_size
             frame_states_list.append(batch_hidden_states)
             flat_idxs.extend([(idx, j - 1) for j in range(i, i + real_batch_size)])
