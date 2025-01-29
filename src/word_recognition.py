@@ -236,4 +236,4 @@ def train(config: DictConfig):
         predictions_df["label"] = predictions_df.label_idx.map(dict(enumerate(all_labels)))
         predictions_df["predicted_label"] = predictions_df.predicted_label_idx.map(dict(enumerate(all_labels)))
         predictions_df["correct"] = predictions_df.label_idx == predictions_df.predicted_label_idx
-        predictions_df.to_csv(output_dir / f"predictions-frame_{frame_idx}.csv", index=False)
+        predictions_df.to_parquet(output_dir / f"predictions-frame_{frame_idx}.parquet", index=False)
