@@ -69,23 +69,31 @@ class MyDataset(Dataset):
 class MyModelOutput(transformers.utils.ModelOutput):
     loss: torch.Tensor = None
     logits: torch.Tensor = None
+    class_pred: torch.Tensor = None
     
 
 class MyModel(nn.Module):
-    def __init__(self, input_dim, num_labels):
+    def __init__(self, input_dim, num_labels, return_logits=False):
         super().__init__()
         self.fc = nn.Linear(input_dim, num_labels)
+        self.return_logits = return_logits
 
-    def forward(self, inputs, labels=None, **kwargs):
+    def forward(self, inputs, labels=None,
+                return_logits=None, **kwargs):
+        return_logits = return_logits if return_logits is not None else self.return_logits
+
         logits = self.fc(inputs)
 
         loss = None
         if labels is not None:
             loss = nn.CrossEntropyLoss()(logits, labels)
+
+        class_pred = logits.argmax(dim=1)
         
         return MyModelOutput(
             loss=loss,
-            logits=logits
+            logits=logits if return_logits else None,
+            class_pred=class_pred,
         )
 
 
@@ -136,7 +144,7 @@ def prepare_dataset(embeddings, labels, label_instance_idxs,
 
 def compute_metrics(p: transformers.EvalPrediction):
     labels, idxs, instance_idxs = p.label_ids
-    preds = np.argmax(p.predictions, axis=1)
+    preds = p.predictions[-1]
     return {"accuracy": (preds == labels).mean()}
 
 
@@ -224,11 +232,14 @@ def train(config: DictConfig):
 
             all_test_evaluations.append(trainer.evaluate(test_dataset))
 
+            trainer.model.return_logits = True
             test_output = trainer.predict(test_dataset)
+            trainer.model.return_logits = False
+
             assert test_output.predictions is not None
             assert test_output.label_ids is not None
-            model_logits: np.ndarray = test_output.predictions
-            predicted_label_idx = model_logits.argmax(axis=1)
+            model_logits: np.ndarray = test_output.predictions[0]
+            predicted_label_idx = test_output.predictions[1]
 
             model_probabilities = torch.nn.functional.softmax(torch.tensor(model_logits), dim=1).numpy()
             model_entropy = -np.sum(model_probabilities * np.log(model_probabilities), axis=1)
