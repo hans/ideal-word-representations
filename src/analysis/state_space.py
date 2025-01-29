@@ -338,6 +338,136 @@ def prepare_word_trajectory_spec(
     )
 
 
+class LabeledStateTrajectory:
+
+    def __init__(self,
+                 embeddings: np.ndarray,
+                 metadata: pd.DataFrame,
+                 cut_names: Optional[list[str]] = None):
+        self.embeddings = embeddings
+        self.metadata = metadata
+        self.cut_names = cut_names or []
+
+        self._check_metadata()
+
+    def _check_metadata(self):
+        # assert self.trajectories.shape[0] == self.metadata.shape[0]
+
+        expected_columns = {"label", "label_idx", "instance_idx", "frame_idx",
+                            "span_onset_frame_idx", "span_offset_frame_idx",
+                            "relative_frame_idx"}
+        for cut_name in self.cut_names:
+            expected_columns.add(f"{cut_name}_idx")
+            expected_columns.add(f"{cut_name}_label")
+            expected_columns.add(f"{cut_name}_onset_frame_idx")
+        assert set(self.metadata.columns) <= expected_columns
+
+    @staticmethod
+    def _make_cuts_metadata(embeddings: np.ndarray, spec: StateSpaceAnalysisSpec,
+                            include_cuts: Optional[list[str]] = None) -> pd.DataFrame:
+        assert spec.cuts is not None
+        if include_cuts is None:
+            include_cuts = list(spec.cuts.index.get_level_values("level").unique())
+        else:
+            assert set(include_cuts) <= set(spec.cuts.index.get_level_values("level").unique())
+
+        frame_series = pd.Series(np.arange(embeddings.shape[0]), name="frame_idx")
+        tdf = spec.target_frame_spans_df
+
+        all_cuts_md = []
+        for i, level in enumerate(tqdm(include_cuts, leave=False, desc="Preparing metadata")):
+            cuts = spec.cuts.xs(level, level="level").copy()
+            cuts[f"{level}_idx"] = cuts.groupby(["label", "instance_idx"]).cumcount()
+            cuts = cuts.sort_values("onset_frame_idx")
+
+            # include label and instance_idx information from first pass through cuts
+            retain_columns = ["onset_frame_idx", "offset_frame_idx", f"{level}_idx", "description"]
+            if i == 0:
+                cuts = cuts.reset_index()
+                retain_columns += ["label", "instance_idx"]
+
+                # Add in start/end of state space span
+                cuts = pd.merge(cuts, tdf.rename(columns={"start_frame": "span_onset_frame_idx",
+                                                          "end_frame": "span_offset_frame_idx"}),
+                                on=["label", "instance_idx"])
+                retain_columns += ["span_onset_frame_idx", "span_offset_frame_idx"]
+            cuts = cuts[retain_columns]
+
+            cuts_md = pd.merge_asof(frame_series, cuts,
+                                    left_on="frame_idx", right_on="onset_frame_idx",
+                                    direction="backward")
+            
+            # Drop rows where the frame is after the cut offset
+            cuts_md = cuts_md[cuts_md.frame_idx < cuts_md.offset_frame_idx]
+            
+            type_spec = {"onset_frame_idx": int,
+                         f"{level}_idx": int}
+            if i == 0:
+                type_spec.update({"instance_idx": int,
+                                  "span_onset_frame_idx": int,
+                                  "span_offset_frame_idx": int})
+            cuts_md = cuts_md.set_index("frame_idx").dropna() \
+                .drop(columns="offset_frame_idx") \
+                .astype(type_spec) \
+                .rename(columns={"onset_frame_idx": f"{level}_onset_frame_idx",
+                                 "description": f"{level}_label"})
+
+            all_cuts_md.append(cuts_md)
+
+        ret = all_cuts_md[0]
+        for cuts_md in all_cuts_md[1:]:
+            ret = pd.merge(ret, cuts_md, left_index=True, right_index=True, how="outer")
+
+        # add final metadata columns
+        ret["label_idx"] = ret["label"].map({label: i for i, label in enumerate(spec.labels)})
+        ret["relative_frame_idx"] = ret.index - ret[f"span_onset_frame_idx"]
+
+        return ret
+
+    @classmethod
+    def from_embeddings(cls,
+                        embeddings: np.ndarray,
+                        spec: StateSpaceAnalysisSpec,
+                        expand_window: Optional[tuple[int, int]] = None,
+                        include_cuts: Optional[list[str]] = None,
+                        pad: Union[str, float] = "last") -> "LabeledStateTrajectory":
+        """
+        Prepare a labeled state trajectory from the given embeddings, following
+        the given state space representation.
+        """
+        if include_cuts is not None:
+            assert spec.cuts is not None
+            assert set(include_cuts) <= set(spec.cuts.index.get_level_values("level"))
+        else:
+            include_cuts = list(spec.cuts.index.get_level_values("level").unique())
+
+        # traj_data = prepare_state_trajectory(embeddings, spec, expand_window=expand_window, pad=pad)
+        metadata = cls._make_cuts_metadata(embeddings, spec, include_cuts=include_cuts)
+
+        return cls(embeddings, metadata, cut_names=include_cuts)
+
+    def get_frames_by_relative_idx(self, relative_idx: int, include_labels=False
+                                   ):
+        """
+        Get embeddings by position relative to word onset.
+        
+        Args:
+            relative_idx: Position relative to word onset, where 0 is the onset frame.
+                Negative values are allowed; in this case, returned labels will still
+                correspond to the focus word, and not the preceding word from which
+                the frames are drawn.
+        """
+        draw_idx = 0 if relative_idx < 0 else relative_idx
+        frame_rows = self.metadata[self.metadata.relative_frame_idx == draw_idx]
+
+        idx_rows = frame_rows.index
+        if relative_idx < 0:
+            idx_rows += relative_idx
+
+        if include_labels:
+            return idx_rows, self.embeddings[idx_rows], frame_rows.label_idx.values
+        return idx_rows, self.embeddings[idx_rows]
+
 
 def prepare_state_trajectory(
         embeddings: np.ndarray,
