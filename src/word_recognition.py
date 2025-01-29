@@ -174,6 +174,11 @@ def train(config: DictConfig):
     hparam_config = trainer_config.pop("hyperparameter_search", None)
 
     output_dir = Path(HydraConfig.get().runtime.output_dir)
+
+    # Save vocabulary to output directory
+    with open(output_dir / "vocabulary.txt", "w") as f:
+        f.write("\n".join(all_labels))
+
     for frame_idx, datasets in tqdm(datasets.items(), unit="frame"):
         all_test_evaluations, all_test_outputs = [], []
         for split_idx, (train_dataset, test_dataset) in enumerate(datasets):
