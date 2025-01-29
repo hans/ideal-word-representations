@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from transformers.trainer_callback import TrainerState
 
@@ -49,7 +50,7 @@ class Vocabulary(object):
         }
     
 
-def get_best_checkpoint(trainer_dir) -> str:
+def get_best_checkpoint(trainer_dir) -> Optional[str]:
     all_checkpoints = list(Path(trainer_dir).glob("checkpoint-*"))
     if not all_checkpoints:
         raise ValueError(f"No checkpoints found in {trainer_dir}")
@@ -58,8 +59,11 @@ def get_best_checkpoint(trainer_dir) -> str:
     state = TrainerState.load_from_json(last_checkpoint / "trainer_state.json")
     best_checkpoint = state.best_model_checkpoint
 
+    if best_checkpoint is None:
+        return
+
     # HACK: remove prefix from old cluster
     if best_checkpoint.startswith("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):
         best_checkpoint = best_checkpoint[len("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):]
 
-    return Path(trainer_dir) / Path(best_checkpoint).name
+    return str(Path(trainer_dir) / Path(best_checkpoint).name)
