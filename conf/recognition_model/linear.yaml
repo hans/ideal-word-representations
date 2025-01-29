@@ -10,6 +10,7 @@ optimizer:
 evaluation:
   keep_top_k: 20000
   subsample_instances: 50
+  min_instances_per_label: 50
 
   num_stratified_splits: 3
 

@@ -90,11 +90,28 @@ class MyModel(nn.Module):
 
 
 def prepare_dataset(embeddings, labels, label_instance_idxs,
-                    num_splits=5) -> list[tuple[Dataset, Dataset]]:
+                    num_splits=5, min_instances_per_label=None
+                    ) -> list[tuple[Dataset, Dataset]]:
     assert embeddings.shape[0] == labels.shape[0] == label_instance_idxs.shape[0]
 
     # l2 norm
     embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+
+    if min_instances_per_label is not None:
+        # bootstrap to ensure that each label has at least min_instances_per_label instances
+        label_counts = np.bincount(labels, minlength=np.max(labels) + 1)
+        bootstrap_size = np.maximum(0, min_instances_per_label - label_counts)
+        # skip cases where bootstrap_size[i] == min_instances_per_label -- this means we
+        # have no instances of this label in the dataset
+        bootstrap_samples = np.concatenate([
+            np.random.choice(np.where(labels == label)[0], size=bsize, replace=True)
+            if bsize > 0 and bsize < min_instances_per_label else np.array([], dtype=int)
+            for label, bsize in enumerate(bootstrap_size)
+        ])
+
+        embeddings = np.concatenate([embeddings, embeddings[bootstrap_samples]], axis=0)
+        labels = np.concatenate([labels, labels[bootstrap_samples]], axis=0)
+        label_instance_idxs = np.concatenate([label_instance_idxs, label_instance_idxs[bootstrap_samples]], axis=0)
 
     # do stratified k-fold split
     skf = StratifiedKFold(n_splits=num_splits, shuffle=True, random_state=42)
@@ -141,7 +158,10 @@ def train(config: DictConfig):
 
     trajectories = prepare_trajectories(embeddings, state_space_spec, config.recognition_model)
     datasets = {
-        frame_idx: prepare_dataset(*traj, num_splits=config.recognition_model.evaluation.num_stratified_splits)
+        frame_idx: prepare_dataset(
+            *traj,
+            num_splits=config.recognition_model.evaluation.num_stratified_splits,
+            min_instances_per_label=config.recognition_model.evaluation.min_instances_per_label)
         for frame_idx, traj in enumerate(trajectories)
     }
     all_labels = state_space_spec.labels
@@ -162,7 +182,6 @@ def train(config: DictConfig):
         logging_dir=Path(HydraConfig.get().runtime.output_dir) / "logs",
         per_device_eval_batch_size=config.recognition_model.evaluation.eval_batch_size,
         eval_accumulation_steps=5,
-        # max_steps=max_training_steps,
         **OmegaConf.to_object(config.training_args))
     
     callbacks = []
