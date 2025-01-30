@@ -40,8 +40,8 @@ ALL_MODEL_NOTEBOOKS = [
     "word_boundary",
     "syllable_boundary",
 
-    "geometry/analogy",
-    "geometry/analogy_dynamic",
+    # "geometry/analogy",
+    # "geometry/analogy_dynamic",
 ]
 
 
@@ -60,7 +60,7 @@ def select_gpu_device(wildcards, resources):
     import GPUtil
     available_l = GPUtil.getAvailable(
         order = 'random', limit = resources.gpu,
-        maxLoad = 0.01, maxMemory = 0.4, includeNan=False,
+        maxLoad = 0.01, maxMemory = 0.24, includeNan=False,
         excludeID=[], excludeUUID=[])
     available_str = ",".join([str(x) for x in available_l])
 
