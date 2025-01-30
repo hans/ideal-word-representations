@@ -258,6 +258,14 @@ class StateSpaceAnalysisSpec:
         top_k_labels = self.label_counts.sort_values(ascending=False).head(k).index
         return self.drop_labels(drop_names=set(self.labels) - set(top_k_labels))
     
+    def keep_min_frequency(self, freq=50):
+        """
+        Return a copy of the current state space analysis spec with only labels
+        that have at least `freq` instances.
+        """
+        keep_labels = self.label_counts[self.label_counts >= freq].index
+        return self.drop_labels(drop_names=set(self.labels) - set(keep_labels))
+    
     def expand_by_cut_index(self, cut_level: str) -> "StateSpaceAnalysisSpec":
         """
         Expand the state space analysis spec to include information about
