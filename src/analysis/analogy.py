@@ -1,5 +1,6 @@
 from collections import  defaultdict
 from functools import partial
+import itertools
 import logging
 
 from fastdist import fastdist
@@ -189,19 +190,16 @@ def nxn_cos_sim(A, B, dim=1, eps=1e-8):
     
 
 def iter_equivalences(
-        config, all_cross_instances,
-        agg, agg_src,
+        config, all_cross_instances, agg_src: np.ndarray,
         device: str = "cpu",
         num_samples=100, max_num_vector_samples=250,
         seed=None,):
     
     # Pre-compute lookup from label idx, instance idx to flat idx
+    if isinstance(agg_src, torch.Tensor):
+        agg_src = agg_src.cpu().numpy()
     flat_idx_lookup = {(label_idx, instance_idx): flat_idx
                        for flat_idx, (label_idx, instance_idx, _) in enumerate(agg_src)}
-    
-    # move data to device
-    agg = torch.tensor(agg).to(device)
-    agg_src = torch.tensor(agg_src).to(device)
 
     if seed is not None:
         np.random.seed(seed)
@@ -259,15 +257,21 @@ def iter_equivalences(
             continue
 
         # sample pairs of base forms
-        from_samples, to_samples = sample_non_identical_pairs(from_equiv_labels, to_equiv_labels, num_samples)
+        candidate_pairs = [(x, y) for x, y in itertools.product(from_equiv_labels, to_equiv_labels) if x != y]
+        num_samples = min(num_samples, len(candidate_pairs))
+        samples = np.random.choice(len(candidate_pairs), num_samples, replace=False)
 
-        for from_equiv_label_i, to_equiv_label_i in zip(tqdm(from_samples, leave=False), to_samples):
+        for idx in tqdm(samples, leave=False):
+            from_equiv_label_i, to_equiv_label_i = candidate_pairs[idx]
             rows_from_i = from_equiv.get_group(tuple(from_equiv_label_i))
             rows_to_i = to_equiv.get_group(tuple(to_equiv_label_i))
 
             base_from_label = rows_from_i.base.iloc[0]
+            base_from_idx = rows_from_i.base_idx.iloc[0]
             base_to_label = rows_to_i.base.iloc[0]
             base_to_idx = rows_to_i.base_idx.iloc[0]
+            inflected_from_label = rows_from_i.inflected.iloc[0]
+            inflected_from_idx = rows_from_i.inflected_idx.iloc[0]
             inflected_to_label = rows_to_i.inflected.iloc[0]
             inflected_to_idx = rows_to_i.inflected_idx.iloc[0]
 
@@ -285,18 +289,26 @@ def iter_equivalences(
 
             from_inflected_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.inflected_idx, row.inflected_instance_idx)]
-                 for _, row in rows_from_i.iterrows()])
+                for _, row in rows_from_i.iterrows()])
             from_base_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.base_idx, row.base_instance_idx)]
-                 for _, row in rows_from_i.iterrows()])
+                for _, row in rows_from_i.iterrows()])
             to_base_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.base_idx, row.base_instance_idx)]
-                 for _, row in rows_to_i.iterrows()])
+                for _, row in rows_to_i.iterrows()])
             
             yield {
                 "group": group,
+
                 "base_from_label": base_from_label,
+                "base_from_idx": base_from_idx,
+                "inflected_from_label": inflected_from_label,
+                "inflected_from_idx": inflected_from_idx,
                 "base_to_label": base_to_label,
+                "base_to_idx": base_to_idx,
+                "inflected_to_label": inflected_to_label,
+                "inflected_to_idx": inflected_to_idx,
+
                 "inflection_from": inflection_from,
                 "inflection_to": inflection_to,
                 "from_equiv_label_i": from_equiv_label_i,
@@ -304,9 +316,7 @@ def iter_equivalences(
                 "from_inflected_flat_idx": from_inflected_flat_idx,
                 "from_base_flat_idx": from_base_flat_idx,
                 "to_base_flat_idx": to_base_flat_idx,
-                "base_to_idx": base_to_idx,
-                "inflected_to_label": inflected_to_label,
-                "inflected_to_idx": inflected_to_idx,
+                
             }
 
 
@@ -319,12 +329,14 @@ def run_experiment_equiv_level(
         num_samples=100, max_num_vector_samples=250,
         seed=None,
         exclude_base_from_predictions=True):
+
+    # move data to device
+    agg = torch.tensor(agg).to(device)
+    agg_src = torch.tensor(agg_src).to(device)
     
     results = []
     for sample in iter_equivalences(
-            config,
-            all_cross_instances,
-            agg, agg_src,
+            config, all_cross_instances, agg_src,
             device=device,
             num_samples=num_samples,
             max_num_vector_samples=max_num_vector_samples,
@@ -337,9 +349,8 @@ def run_experiment_equiv_level(
         # Critical analogy logic
         pair_difference = agg[from_inflected_flat_idx] - agg[from_base_flat_idx]
         pair_base = agg[to_base_flat_idx]
-        
-        pair_predicted = pair_base + pair_difference
 
+        pair_predicted = pair_base + pair_difference
         pair_predicted /= torch.norm(pair_predicted, dim=1, keepdim=True)
 
         references, references_src = agg, agg_src
@@ -363,6 +374,8 @@ def run_experiment_equiv_level(
         nearest_neighbor = references_src[ranks[0]]
         results.append({
             "group": sample["group"],
+            "from_equiv_label": sample["from_equiv_label_i"],
+            "to_equiv_label": sample["to_equiv_label_i"],
             "base_from": sample["base_from_label"],
             "base_to": sample["base_to_label"],
             "inflection_from": sample["inflection_from"],
