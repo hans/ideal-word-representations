@@ -191,7 +191,6 @@ def nxn_cos_sim(A, B, dim=1, eps=1e-8):
 
 def iter_equivalences(
         config, all_cross_instances, agg_src: np.ndarray,
-        device: str = "cpu",
         num_samples=100, max_num_vector_samples=250,
         seed=None,):
     
@@ -208,6 +207,7 @@ def iter_equivalences(
         grouper = all_cross_instances.groupby(config["group_by"])
     else:
         grouper = [("", all_cross_instances)]
+
     for group, rows in tqdm(grouper, leave=False):
         try:
             if "base_query" in config:
@@ -253,13 +253,13 @@ def iter_equivalences(
 
         if len(set(from_equiv_labels) | set(to_equiv_labels)) <= 1:
             # not enough labels to support transfer.
-            L.warning(f"Skipping {group} due to insufficient labels")
+            L.error(f"Skipping {group} due to insufficient labels")
             continue
 
         # sample pairs of base forms
         candidate_pairs = [(x, y) for x, y in itertools.product(from_equiv_labels, to_equiv_labels) if x != y]
-        num_samples = min(num_samples, len(candidate_pairs))
-        samples = np.random.choice(len(candidate_pairs), num_samples, replace=False)
+        num_samples_i = min(num_samples, len(candidate_pairs))
+        samples = np.random.choice(len(candidate_pairs), num_samples_i, replace=False)
 
         for idx in tqdm(samples, leave=False):
             from_equiv_label_i, to_equiv_label_i = candidate_pairs[idx]
@@ -289,13 +289,13 @@ def iter_equivalences(
 
             from_inflected_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.inflected_idx, row.inflected_instance_idx)]
-                for _, row in rows_from_i.iterrows()])
+                 for _, row in rows_from_i.iterrows()])
             from_base_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.base_idx, row.base_instance_idx)]
-                for _, row in rows_from_i.iterrows()])
+                 for _, row in rows_from_i.iterrows()])
             to_base_flat_idx = torch.tensor(
                 [flat_idx_lookup[(row.base_idx, row.base_instance_idx)]
-                for _, row in rows_to_i.iterrows()])
+                 for _, row in rows_to_i.iterrows()])
             
             yield {
                 "group": group,
@@ -337,7 +337,6 @@ def run_experiment_equiv_level(
     results = []
     for sample in iter_equivalences(
             config, all_cross_instances, agg_src,
-            device=device,
             num_samples=num_samples,
             max_num_vector_samples=max_num_vector_samples,
             seed=seed):
