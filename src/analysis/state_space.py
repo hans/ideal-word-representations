@@ -491,6 +491,7 @@ def prepare_state_trajectory(
     If `expand_window` is not None, add `expand_window[0]` frames to the left
     of each trajectory and `expand_window[1]` frames to the right.
     """
+    agg_fn = None
     if agg_fn_spec is not None:
         if agg_fn_dimension is None:
             raise ValueError("Must provide agg_fn_dimension when using agg_fn_spec")
