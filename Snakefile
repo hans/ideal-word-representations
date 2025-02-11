@@ -60,7 +60,7 @@ def select_gpu_device(wildcards, resources):
     import GPUtil
     available_l = GPUtil.getAvailable(
         order = 'random', limit = resources.gpu,
-        maxLoad = 0.01, maxMemory = 0.24, includeNan=False,
+        maxLoad = 0.01, maxMemory = 1.0, includeNan=False,
         excludeID=[], excludeUUID=[])
     available_str = ",".join([str(x) for x in available_l])
 
@@ -87,11 +87,11 @@ def join_hydra_overrides(overrides: dict[str, Any]):
 rule preprocess:
     input:
         timit_raw = lambda wildcards: config["datasets"][wildcards.dataset]["raw_path"],
-        script = "notebooks/preprocessing/timit.ipynb"
+        script = "notebooks/preprocessing/{dataset}.ipynb"
 
     output:
         data_path = directory("outputs/preprocessed_data/{dataset}"),
-        notebook_path = "outputs/preprocessing/{dataset}/timit.ipynb"
+        notebook_path = "outputs/preprocessing/{dataset}/{dataset}.ipynb"
 
     shell:
         """
@@ -917,3 +917,100 @@ rule estimate_rsa:
             +analysis={wildcards.analysis} \
             analysis.state_space={wildcards.state_space}
         """)
+
+
+rule prepare_analogy_inputs:
+    input:
+        notebook = "notebooks/analogy/prepare_inputs.ipynb",
+        state_space_specs = "outputs/state_space_specs/{dataset}/w2v2_8/state_space_specs.h5",
+
+    output:
+        outdir = directory("outputs/analogy/inputs/{dataset}/"),
+        notebook = "outputs/analogy/inputs/{dataset}/prepare_inputs.ipynb",
+        state_space_spec = "outputs/analogy/inputs/{dataset}/state_space_spec.h5"
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p state_space_specs_path {input.state_space_specs}
+        """
+
+
+rule run_analogy_experiment:
+    input:
+        notebook = "notebooks/analogy/run.ipynb",
+
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
+        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}.npy",
+
+        state_space_specs = "outputs/analogy/inputs/{dataset}/state_space_spec.h5",
+
+    output:
+        outdir = directory("outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
+        notebook = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
+        results = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {input.hidden_states} \
+            -p state_space_specs_path {input.state_space_specs} \
+            -p embeddings_path {input.embeddings}
+        """)
+
+rule run_analogy_experiment_identity:
+    input:
+        notebook = "notebooks/analogy/run.ipynb",
+
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
+        state_space_specs = "outputs/analogy/inputs/{dataset}/state_space_spec.h5",
+
+    output:
+        outdir = directory("outputs/analogy/runs_id/{dataset}/{base_model_name}/"),
+        notebook = "outputs/analogy/runs_id/{dataset}/{base_model_name}/run.ipynb",
+        results = "outputs/analogy/runs_id/{dataset}/{base_model_name}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        # Copy hidden states to make reading more efficient
+        hs_path=/scratch/jgauthier/{wildcards.base_model_name}-{wildcards.dataset}.h5
+        if [ ! -f $hs_path ]; then
+            cp {input.hidden_states} $hs_path
+        fi
+
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path $hs_path \
+            -p state_space_specs_path {input.state_space_specs}
+            -p embeddings_path ID
+        """)
+
+base_models = ["w2v2_4", "w2v2_8", "w2v2_11"]
+rule run_all_analogy_experiments:
+    input:
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
+                base_model=base_models),
+        expand("outputs/analogy/runs_id/librispeech-train-clean-100/{base_model}",
+                base_model=base_models),
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+                base_model=base_models),

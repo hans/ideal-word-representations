@@ -478,10 +478,12 @@ class LabeledStateTrajectory:
 
 
 def prepare_state_trajectory(
-        embeddings: np.ndarray,
+        embeddings: Union[np.ndarray, h5py.Dataset],
         spec: StateSpaceAnalysisSpec,
         expand_window: Optional[tuple[int, int]] = None,
         pad: Union[str, float] = "last",
+        agg_fn_spec: Optional[Union[str, tuple[str, Any]]] = None,
+        agg_fn_dimension: Optional[int] = None,
 ) -> list[np.ndarray]:
     """
     Prepare the state trajectory for the given dataset and model embeddings.
@@ -489,16 +491,29 @@ def prepare_state_trajectory(
     If `expand_window` is not None, add `expand_window[0]` frames to the left
     of each trajectory and `expand_window[1]` frames to the right.
     """
+    if agg_fn_spec is not None:
+        if agg_fn_dimension is None:
+            raise ValueError("Must provide agg_fn_dimension when using agg_fn_spec")
+    
+        agg_fn = _get_agg_fn(agg_fn_spec)
+
     max_num_frames = max(max(end - start + 1 for start, end in trajectory_spec)
                          for trajectory_spec in spec.target_frame_spans)
     if expand_window is not None:
         max_num_frames += expand_window[0] + expand_window[1]
     ret = []
 
-    for i, frame_spec in enumerate(spec.target_frame_spans):
+    if embeddings.ndim == 3:
+        assert embeddings.shape[1] == 1
+    embedding_dim = embeddings.shape[-1]
+
+    ret_num_timesteps = max_num_frames if agg_fn_dimension is None else agg_fn_dimension
+
+    # DEV
+    for i, frame_spec in enumerate(tqdm(spec.target_frame_spans)):
         num_instances = len(frame_spec)
 
-        trajectory_frames = np.zeros((num_instances, max_num_frames, embeddings.shape[1]))
+        trajectory_frames = np.zeros((num_instances, ret_num_timesteps, embedding_dim))
         skip_idxs = []
         for j, (start, end) in enumerate(frame_spec):
             if expand_window is not None:
@@ -509,18 +524,30 @@ def prepare_state_trajectory(
                 start = max(0, start - expand_window[0])
                 end = min(spec.total_num_frames - 1, end + expand_window[1])
 
-            trajectory_frames[j, :end - start + 1] = embeddings[start:end + 1]
+            embedding_ij = embeddings[start:end + 1]
+            
+            if embedding_ij.ndim == 3:
+                embedding_ij = embedding_ij.squeeze(1)
 
-            # Pad on right
-            if pad == "last":
-                pad_value = embeddings[end]
-            elif isinstance(pad, str):
-                raise ValueError(f"Invalid pad value {pad}; use `last` or a float")
+            if agg_fn is not None:
+                embedding_ij = agg_fn(embedding_ij.T, state_space_spec=spec,
+                                      label_idx=i).T
+                trajectory_frames[j] = embedding_ij
             else:
-                pad_value = pad
+                trajectory_frames[j, :end - start + 1] = embedding_ij
 
-            if end - start + 1 < max_num_frames:
-                trajectory_frames[j, end - start + 1:] = pad_value
+                # Pad on right
+                if pad == "last":
+                    pad_value = embeddings[end]
+                    if pad_value.ndim == 2:
+                        pad_value = pad_value.squeeze(0)
+                elif isinstance(pad, str):
+                    raise ValueError(f"Invalid pad value {pad}; use `last` or a float")
+                else:
+                    pad_value = pad
+
+                if end - start + 1 < max_num_frames:
+                    trajectory_frames[j, end - start + 1:] = pad_value
 
         trajectory_frames = np.delete(trajectory_frames, skip_idxs, axis=0)
         ret.append(trajectory_frames)
@@ -612,6 +639,15 @@ TRAJECTORY_META_AGG_FNS: dict[str, Callable] = {
 }
 
 
+def _get_agg_fn(agg_fn_spec: Union[str, tuple[str, Any]]) -> Callable:
+    if isinstance(agg_fn_spec, tuple):
+        agg_fn_name, agg_fn_args = agg_fn_spec
+        agg_fn = TRAJECTORY_META_AGG_FNS[agg_fn_name](agg_fn_args)
+    else:
+        agg_fn = TRAJECTORY_AGG_FNS[agg_fn_spec]
+    return agg_fn
+
+
 def aggregate_state_trajectory(trajectory: list[np.ndarray],
                                state_space_spec: StateSpaceAnalysisSpec,
                                agg_fn_spec: Union[str, tuple[str, Any]],
@@ -619,11 +655,7 @@ def aggregate_state_trajectory(trajectory: list[np.ndarray],
     """
     Aggregate over time in the state trajectories returned by `prepare_state_trajectory`.
     """
-    if isinstance(agg_fn_spec, tuple):
-        agg_fn_name, agg_fn_args = agg_fn_spec
-        agg_fn = TRAJECTORY_META_AGG_FNS[agg_fn_name](agg_fn_args)
-    else:
-        agg_fn = TRAJECTORY_AGG_FNS[agg_fn_spec]
+    agg_fn = _get_agg_fn(agg_fn_spec)
 
     ret = [agg_fn(traj, state_space_spec=state_space_spec,
                   label_idx=idx)
