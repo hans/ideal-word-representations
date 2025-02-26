@@ -12,6 +12,9 @@ outputs
 .snakemake
 *.log
 *.pkl
+*.mp4
+*.pdf
+*.parquet
 
 # transient notebooks
 202*.ipynb
