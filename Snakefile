@@ -14,6 +14,7 @@ ruleorder:
 
 wildcard_constraints:
     dataset = r"[a-z0-9_-]+",
+    base_model_name = r"[a-z0-9_-]+",
 #     feature_sets = r"[a-z0-9_]+",
 #     subject = r"[a-z0-9_]+",
 
@@ -60,7 +61,7 @@ def select_gpu_device(wildcards, resources):
     import GPUtil
     available_l = GPUtil.getAvailable(
         order = 'random', limit = resources.gpu,
-        maxLoad = 0.01, maxMemory = 1.0, includeNan=False,
+        maxLoad = 0.01, maxMemory = 0.49, includeNan=False,
         excludeID=[], excludeUUID=[])
     available_str = ",".join([str(x) for x in available_l])
 
@@ -922,12 +923,18 @@ rule estimate_rsa:
 rule prepare_analogy_inputs:
     input:
         notebook = "notebooks/analogy/prepare_inputs.ipynb",
-        state_space_specs = "outputs/state_space_specs/{dataset}/w2v2_8/state_space_specs.h5",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_class}_8/state_space_specs.h5",
 
     output:
-        outdir = directory("outputs/analogy/inputs/{dataset}/"),
-        notebook = "outputs/analogy/inputs/{dataset}/prepare_inputs.ipynb",
-        state_space_spec = "outputs/analogy/inputs/{dataset}/state_space_spec.h5"
+        outdir = directory("outputs/analogy/inputs/{dataset}/{base_model_class}"),
+        notebook = "outputs/analogy/inputs/{dataset}/{base_model_class}/prepare_inputs.ipynb",
+        state_space_spec = "outputs/analogy/inputs/{dataset}/{base_model_class}/state_space_spec.h5",
+
+        inflection_results = "outputs/analogy/inputs/{dataset}/{base_model_class}/inflection_results.parquet",
+        inflection_instances = "outputs/analogy/inputs/{dataset}/{base_model_class}/inflection_instances.parquet",
+        all_cross_instances = "outputs/analogy/inputs/{dataset}/{base_model_class}/all_cross_instances.parquet",
+        most_common_allomorphs = "outputs/analogy/inputs/{dataset}/{base_model_class}/most_common_allomorphs.csv",
+        false_friends = "outputs/analogy/inputs/{dataset}/{base_model_class}/false_friends.csv",
 
     shell:
         """
@@ -939,14 +946,32 @@ rule prepare_analogy_inputs:
         """
 
 
+def _compute_analogy_inputs(wildcards, identity=True, flat=True):
+    base_model_class = re.sub(r"_[0-9]+$", "", wildcards.base_model_name)
+    ret = {
+        "notebook": "notebooks/analogy/run.ipynb",
+
+        "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
+        "state_space_specs": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/state_space_spec.h5",
+
+        "inflection_results": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/inflection_results.parquet",
+        "all_cross_instances": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/all_cross_instances.parquet",
+        "most_common_allomorphs": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/most_common_allomorphs.csv",
+        "false_friends": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/false_friends.csv",
+    }
+
+    if not identity:
+        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+
+    if flat:
+        return list(ret.values())
+    else:
+        return ret
+
+
 rule run_analogy_experiment:
     input:
-        notebook = "notebooks/analogy/run.ipynb",
-
-        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
-        embeddings = "outputs/model_embeddings/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}.npy",
-
-        state_space_specs = "outputs/analogy/inputs/{dataset}/state_space_spec.h5",
+        lambda wildcards: _compute_analogy_inputs(wildcards, identity=False)
 
     output:
         outdir = directory("outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
@@ -957,25 +982,29 @@ rule run_analogy_experiment:
         gpu = 1
 
     run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs(wildcards, identity=False, flat=False)
+
         gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""
         export CUDA_VISIBLE_DEVICES={gpu_device}
         export HDF5_USE_FILE_LOCKING=FALSE
         papermill --autosave-cell-every 30 --log-output \
-            {input.notebook} {output.notebook} \
+            {inputs[notebook]} {output.notebook} \
             -p output_dir {output.outdir} \
-            -p hidden_states_path {input.hidden_states} \
-            -p state_space_specs_path {input.state_space_specs} \
-            -p embeddings_path {input.embeddings}
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
         """)
 
 rule run_analogy_experiment_identity:
     input:
-        notebook = "notebooks/analogy/run.ipynb",
-
-        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
-        state_space_specs = "outputs/analogy/inputs/{dataset}/state_space_spec.h5",
+        lambda wildcards: _compute_analogy_inputs(wildcards, identity=True)
 
     output:
         outdir = directory("outputs/analogy/runs_id/{dataset}/{base_model_name}/"),
@@ -986,6 +1015,9 @@ rule run_analogy_experiment_identity:
         gpu = 1
 
     run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs(wildcards, identity=True, flat=False)
+
         gpu_device = select_gpu_device(wildcards, resources)
 
         shell("""
@@ -994,23 +1026,178 @@ rule run_analogy_experiment_identity:
         # Copy hidden states to make reading more efficient
         hs_path=/scratch/jgauthier/{wildcards.base_model_name}-{wildcards.dataset}.h5
         if [ ! -f $hs_path ]; then
-            cp {input.hidden_states} $hs_path
+            cp {inputs[hidden_states]} $hs_path
         fi
 
         papermill --autosave-cell-every 30 --log-output \
-            {input.notebook} {output.notebook} \
+            {inputs[notebook]} {output.notebook} \
             -p output_dir {output.outdir} \
             -p hidden_states_path $hs_path \
-            -p state_space_specs_path {input.state_space_specs}
-            -p embeddings_path ID
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path ID \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
         """)
 
-base_models = ["w2v2_4", "w2v2_8", "w2v2_11"]
+base_models = [f"w2v2_{i}" for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]
 rule run_all_analogy_experiments:
     input:
-        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
-                base_model=base_models),
+        # w2v2 hidden state
         expand("outputs/analogy/runs_id/librispeech-train-clean-100/{base_model}",
                 base_model=base_models),
-        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        # ff word model
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
+        # # phoneme models
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_8-mAP1/phoneme_10frames_fixedlen25",
+        #         base_model=base_models),
+
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
+                base_model=base_models),
+
+        expand("outputs/analogy/runs/librispeech-train-clean-100/w2v2_pc_8/discrim-rnn_32-pc-mAP1/word_broad_10frames_fixedlen25"),
+        # expand("outputs/analogy/runs_id/librispeech-train-clean-100/w2v2_pc_8"),
+
+
+
+
+
+
+####
+
+
+
+rule prepare_analogy_inputs3:
+    input:
+        notebook = "notebooks/analogy/prepare_inputs_v3.ipynb",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_class}_8/state_space_specs.h5",
+
+    output:
+        outdir = directory("outputs/analogy_v3/inputs/{dataset}/{base_model_class}"),
+        notebook = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/prepare_inputs.ipynb",
+        state_space_spec = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/state_space_spec.h5",
+
+        inflection_results = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/inflection_results.parquet",
+        all_cross_instances = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/all_cross_instances.parquet",
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p state_space_specs_path {input.state_space_specs}
+        """
+
+
+def _compute_analogy_inputs3(wildcards, identity=True, flat=True):
+    base_model_class = re.sub(r"_[0-9]+$", "", wildcards.base_model_name)
+    ret = {
+        "notebook": "notebooks/analogy/run_v3.ipynb",
+
+        "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
+        "state_space_specs": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/state_space_spec.h5",
+
+        "inflection_results": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/inflection_results.parquet",
+        "all_cross_instances": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/all_cross_instances.parquet",
+    }
+
+    if not identity:
+        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+
+    if flat:
+        return list(ret.values())
+    else:
+        return ret
+
+
+rule run_analogy_experiment3:
+    input:
+        lambda wildcards: _compute_analogy_inputs3(wildcards, identity=False)
+
+    output:
+        outdir = directory("outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
+        notebook = "outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
+        results = "outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs3(wildcards, identity=False, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]}
+        """)
+
+rule run_analogy_experiment_identity3:
+    input:
+        lambda wildcards: _compute_analogy_inputs3(wildcards, identity=True)
+
+    output:
+        outdir = directory("outputs/analogy_v3/runs_id/{dataset}/{base_model_name}/"),
+        notebook = "outputs/analogy_v3/runs_id/{dataset}/{base_model_name}/run.ipynb",
+        results = "outputs/analogy_v3/runs_id/{dataset}/{base_model_name}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs3(wildcards, identity=True, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        # Copy hidden states to make reading more efficient
+        hs_path=/scratch/jgauthier/{wildcards.base_model_name}-{wildcards.dataset}.h5
+        if [ ! -f $hs_path ]; then
+            cp {inputs[hidden_states]} $hs_path
+        fi
+
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path $hs_path \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path ID \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]}
+        """)
+
+base_models = [f"w2v2_{i}" for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]
+rule run_all_analogy_experiments3:
+    input:
+        # w2v2 hidden state
+        expand("outputs/analogy_v3/runs_id/librispeech-train-clean-100/{base_model}",
+                base_model=base_models),
+        # ff word model
+        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
+                base_model=base_models),
+        # phoneme models
+        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_8-mAP1/phoneme_10frames_fixedlen25",
+                base_model=base_models),
+
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
+        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
+                base_model=base_models),
+
