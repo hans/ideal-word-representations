@@ -1,9 +1,7 @@
 from collections import  defaultdict
-from functools import partial
 import itertools
 import logging
 
-from fastdist import fastdist
 import lemminflect
 import numpy as np
 import pandas as pd
@@ -209,6 +207,8 @@ def iter_equivalences(
         grouper = [("", all_cross_instances)]
 
     for group, rows in tqdm(grouper, leave=False):
+        print(group)
+
         try:
             if "base_query" in config:
                 rows_from = rows.query(config["base_query"])
@@ -329,6 +329,7 @@ def run_experiment_equiv_level(
         num_samples=100, max_num_vector_samples=250,
         seed=None,
         exclude_base_from_predictions=True):
+    print(experiment_name)
 
     # move data to device
     agg = torch.tensor(agg).to(device)
