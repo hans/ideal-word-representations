@@ -11,7 +11,8 @@ import pandas as pd
 def concat_df_with_indices(path_glob: str,
                            path_patterns: list[Union[str, re.Pattern, Callable[[Path], str]]],
                            index_names: list[str],
-                           reader=None):
+                           reader=None,
+                           **kwargs):
     """
     Load a collection of dataframes organized within folders, and use patterns on the
     folder names to create a concatenated multi-indexed dataframe.
@@ -34,7 +35,7 @@ def concat_df_with_indices(path_glob: str,
     assert len(path_patterns) == len(index_names)
 
     paths = list(Path().glob(path_glob))
-    dfs = [reader(p) for p in paths]
+    dfs = [reader(p, **kwargs) for p in paths]
     index_keys = [
         tuple([patt(p) if callable(patt) else re.search(patt, str(p)).group(1)
                for patt in path_patterns])
@@ -46,9 +47,10 @@ def concat_df_with_indices(path_glob: str,
 
 def concat_csv_with_indices(path_glob: str,
                             path_patterns: list[Union[str, re.Pattern, Callable[[Path], str]]],
-                            index_names: list[str]):
+                            index_names: list[str],
+                            **kwargs):
     return concat_df_with_indices(path_glob, path_patterns, index_names,
-                                  reader=pd.read_csv)
+                                  reader=pd.read_csv, **kwargs)
     
 
 
