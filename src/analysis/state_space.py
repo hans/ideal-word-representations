@@ -510,7 +510,6 @@ def prepare_state_trajectory(
 
     ret_num_timesteps = max_num_frames if agg_fn_dimension is None else agg_fn_dimension
 
-    # DEV
     for i, frame_spec in enumerate(tqdm(spec.target_frame_spans)):
         num_instances = len(frame_spec)
 
