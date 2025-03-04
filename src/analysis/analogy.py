@@ -1,6 +1,7 @@
 from collections import  defaultdict
 import itertools
 import logging
+from typing import Optional
 
 import lemminflect
 import numpy as np
@@ -328,7 +329,8 @@ def run_experiment_equiv_level(
         verbose=False,
         num_samples=100, max_num_vector_samples=250,
         seed=None,
-        exclude_base_from_predictions=True):
+        exclude_base_from_predictions=True,
+        include_idxs_in_predictions: Optional[dict[int, list[int]]] = None):
     print(experiment_name)
 
     # move data to device
@@ -364,7 +366,12 @@ def run_experiment_equiv_level(
             base_flat_idxs = torch.where(references_src[:, 0] == sample["base_to_idx"])[0]
             ranks = ranks[~torch.isin(ranks, base_flat_idxs)]
 
-        gt_rank = torch.where(references_src[ranks, 0] == sample["inflected_to_idx"])[0][0].item()
+        if include_idxs_in_predictions is not None:
+            valid_idxs = torch.tensor(list(include_idxs_in_predictions[sample["inflected_to_idx"]]))
+            gt_rank = torch.where(torch.isin(references_src[ranks, 0], valid_idxs))[0][0].item()
+        else:
+            gt_rank = torch.where(references_src[ranks, 0] == sample["inflected_to_idx"])[0][0].item()
+
         gt_distance = dists[gt_rank].item()
 
         if verbose:
