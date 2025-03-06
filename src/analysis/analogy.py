@@ -360,25 +360,30 @@ def run_experiment_equiv_level(
             dists = 1 - nxn_cos_sim(pair_predicted, references)
             # mean over instances of pair
             dists = dists.mean(0)
-        ranks = dists.argsort()
 
         if exclude_base_from_predictions:
             base_flat_idxs = torch.where(references_src[:, 0] == sample["base_to_idx"])[0]
-            ranks = ranks[~torch.isin(ranks, base_flat_idxs)]
+            dists[base_flat_idxs] = torch.inf
+
+        sorted_indices = dists.argsort()
+        ranks = torch.zeros_like(sorted_indices)
+        ranks[sorted_indices] = torch.arange(len(sorted_indices))
 
         if include_idxs_in_predictions is not None:
-            valid_idxs = torch.tensor(list(include_idxs_in_predictions[sample["inflected_to_idx"]]))
-            gt_rank = torch.where(torch.isin(references_src[ranks, 0], valid_idxs))[0][0].item()
+            valid_label_idxs = torch.tensor(list(include_idxs_in_predictions[sample["inflected_to_idx"]]))
         else:
-            gt_rank = torch.where(references_src[ranks, 0] == sample["inflected_to_idx"])[0][0].item()
+            valid_label_idxs = torch.tensor([sample["inflected_to_idx"]])
+        valid_flat_idxs = torch.where(torch.isin(references_src[:, 0], valid_label_idxs))[0]
 
-        gt_distance = dists[gt_rank].item()
+        # get best rank+distance result
+        gt_rank = ranks[valid_flat_idxs].min().item()
+        gt_distance = dists[valid_flat_idxs].min().item()
 
         if verbose:
-            for dist, (label_idx, instance_idx, _) in zip(dists[ranks[:5]], references_src[ranks[:5]]):
+            for dist, (label_idx, instance_idx, _) in zip(dists[sorted_indices[:5]], references_src[sorted_indices[:5]]):
                 print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']}: {state_space_spec.labels[label_idx]} {instance_idx}")
 
-        nearest_neighbor = references_src[ranks[0]]
+        nearest_neighbor = references_src[sorted_indices[0]]
         results.append({
             "group": sample["group"],
             "from_equiv_label": sample["from_equiv_label_i"],
