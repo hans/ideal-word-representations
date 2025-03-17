@@ -946,10 +946,11 @@ rule prepare_analogy_inputs:
         """
 
 
-def _compute_analogy_inputs(wildcards, identity=True, flat=True):
+def _compute_analogy_inputs(wildcards, pseudocausal=False, identity=True, flat=True):
     base_model_class = re.sub(r"_[0-9]+$", "", wildcards.base_model_name)
     ret = {
-        "notebook": "notebooks/analogy/run.ipynb",
+        "notebook": "notebooks/analogy/run_pseudocausal.ipynb" if pseudocausal \
+            else "notebooks/analogy/run.ipynb",
 
         "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
         "state_space_specs": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/state_space_spec.h5",
@@ -977,6 +978,39 @@ rule run_analogy_experiment:
         outdir = directory("outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
         notebook = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
         results = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs(wildcards, identity=False, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
+        """)
+
+rule run_analogy_experiment_pseudocausal:
+    input:
+        lambda wildcards: _compute_analogy_inputs(wildcards, pseudocausal=True, identity=False)
+
+    output:
+        outdir = directory("outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
+        notebook = "outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
+        results = "outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
 
     resources:
         gpu = 1
@@ -1041,28 +1075,72 @@ rule run_analogy_experiment_identity:
             -p false_friends_path {inputs[false_friends]}
         """)
 
+rule run_analogy_experiment_pseudocausal_identity:
+    input:
+        lambda wildcards: _compute_analogy_inputs(wildcards, pseudocausal=True, identity=True)
+
+    output:
+        outdir = directory("outputs/analogy_pc/runs_id/{dataset}/{base_model_name}/"),
+        notebook = "outputs/analogy_pc/runs_id/{dataset}/{base_model_name}/run.ipynb",
+        results = "outputs/analogy_pc/runs_id/{dataset}/{base_model_name}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs(wildcards, identity=True, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        # Copy hidden states to make reading more efficient
+        hs_path=/scratch/jgauthier/{wildcards.base_model_name}-{wildcards.dataset}.h5
+        if [ ! -f $hs_path ]; then
+            cp {inputs[hidden_states]} $hs_path
+        fi
+
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path $hs_path \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path ID \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
+        """)
+
 base_models = [f"w2v2_{i}" for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]
 rule run_all_analogy_experiments:
     input:
         # w2v2 hidden state
         expand("outputs/analogy/runs_id/librispeech-train-clean-100/{base_model}",
                 base_model=base_models),
-        # ff word model
+        # discrim ff
         expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
+        # # discrim rnn
+        # DEV disable for now
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
+
         # # phoneme models
         # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_8-mAP1/phoneme_10frames_fixedlen25",
         #         base_model=base_models),
 
         # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
         #         base_model=base_models),
+
+        # contrastive ff
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25",
+               base_model=base_models),
+        # contrastive rnn (this is actually an rnn, despite ff label)
         expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
-
-        expand("outputs/analogy/runs/librispeech-train-clean-100/w2v2_pc_8/discrim-rnn_32-pc-mAP1/word_broad_10frames_fixedlen25"),
-        # expand("outputs/analogy/runs_id/librispeech-train-clean-100/w2v2_pc_8"),
-
-
 
 
 

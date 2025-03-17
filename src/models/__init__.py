@@ -60,10 +60,7 @@ def get_best_checkpoint(trainer_dir) -> Optional[str]:
     best_checkpoint = state.best_model_checkpoint
 
     if best_checkpoint is None:
-        return
-
-    # HACK: remove prefix from old cluster
-    if best_checkpoint.startswith("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):
-        best_checkpoint = best_checkpoint[len("/net/vast-storage.ib.cluster/scratch/vast/cpl/jgauthie/scratch/ideal-word-representations/"):]
+        # return the last one
+        return str(last_checkpoint)
 
     return str(Path(trainer_dir) / Path(best_checkpoint).name)

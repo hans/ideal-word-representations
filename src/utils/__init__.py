@@ -41,6 +41,11 @@ def concat_df_with_indices(path_glob: str,
                for patt in path_patterns])
         for p in paths
     ]
+    if len(dfs) == 0:
+        # return an empty dataframe with the appropriate index names,
+        # plus the extra index that would result from the concat
+        index = pd.MultiIndex.from_tuples([], names=index_names + ['file'])
+        return pd.DataFrame(index=index)
 
     return pd.concat(dfs, keys=index_keys, names=index_names)
 
