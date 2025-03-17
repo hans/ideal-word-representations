@@ -1,0 +1,9 @@
+hidden_dim: 768
+learning_rate: 0.0003807158379249387
+weight_decay: 0.050890352978407064
+
+output_dim: 32
+num_layers: 0
+
+in_batch_soft_negatives: false
+loss_form: classification
