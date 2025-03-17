@@ -367,12 +367,12 @@ def run_experiment_equiv_level(
 
         sorted_indices = dists.argsort()
         ranks = torch.zeros_like(sorted_indices)
-        ranks[sorted_indices] = torch.arange(len(sorted_indices))
+        ranks[sorted_indices] = torch.arange(len(sorted_indices)).to(sorted_indices)
 
         if include_idxs_in_predictions is not None:
-            valid_label_idxs = torch.tensor(list(include_idxs_in_predictions[sample["inflected_to_idx"]]))
+            valid_label_idxs = torch.tensor(list(include_idxs_in_predictions[sample["inflected_to_idx"]])).to(device)
         else:
-            valid_label_idxs = torch.tensor([sample["inflected_to_idx"]])
+            valid_label_idxs = torch.tensor([sample["inflected_to_idx"]]).to(device)
         valid_flat_idxs = torch.where(torch.isin(references_src[:, 0], valid_label_idxs))[0]
 
         # get best rank+distance result
