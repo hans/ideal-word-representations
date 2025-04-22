@@ -50,28 +50,40 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     return num_examples, train_dataset, eval_dataset, target_length
 
 
-def hyperparameter_space(trial):
-    return {
-        "learning_rate": tune.loguniform(1e-5, 1e-1),
-        "weight_decay": tune.loguniform(1e-5, 1e-1),
-        "tau": tune.loguniform(1e-3, 1),
-        "hidden_dim": tune.choice([32, 64, 128, 256]),
-    }
+def make_hyperparameter_space(search_hidden_dim: bool = True):
+    def hyperparameter_space(trial):
+        ret = {
+            "learning_rate": tune.loguniform(1e-5, 1e-1),
+            "weight_decay": tune.loguniform(1e-5, 1e-1),
+            "tau": tune.loguniform(1e-3, 1),
+        }
+        if search_hidden_dim:
+            ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        return ret
+    return hyperparameter_space
 
-def hyperparameter_space_hinge(trial):
-    return {
-        "learning_rate": tune.loguniform(1e-5, 1e-1),
-        "weight_decay": tune.loguniform(1e-5, 1e-1),
-        "margin": tune.loguniform(1e-3, 1),
-        "hidden_dim": tune.choice([32, 64, 128, 256]),
-    }
+def make_hyperparameter_space_hinge(search_hidden_dim: bool = True):
+    def hyperparameter_space_hinge(trial):
+        ret = {
+            "learning_rate": tune.loguniform(1e-5, 1e-1),
+            "weight_decay": tune.loguniform(1e-5, 1e-1),
+            "margin": tune.loguniform(1e-3, 1),
+        }
+        if search_hidden_dim:
+            ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        return ret
+    return hyperparameter_space_hinge
 
-def hyperparameter_space_classification(trial):
-    return {
-        "learning_rate": tune.loguniform(1e-5, 1e-1),
-        "weight_decay": tune.loguniform(1e-5, 1e-1),
-        "hidden_dim": tune.choice([32, 64, 128, 256]),
-    }
+def make_hyperparameter_space_classification(search_hidden_dim: bool = True):
+    def hyperparameter_space_classification(trial):
+        ret = {
+            "learning_rate": tune.loguniform(1e-5, 1e-1),
+            "weight_decay": tune.loguniform(1e-5, 1e-1),
+        }
+        if search_hidden_dim:
+            ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        return ret
+    return hyperparameter_space_classification
 
 
 HYPERPARAMETER_OBJECTIVE_DIRECTION = "maximize"
@@ -166,11 +178,12 @@ def train(config: DictConfig):
     if trainer_mode == "train":
         trainer.train()
     elif trainer_mode == "hyperparameter_search":
-        hp_space = hyperparameter_space
+        search_hidden_dim = model_config.num_layers > 0
+        hp_space = make_hyperparameter_space(search_hidden_dim)
         if loss_form == "hinge":
-            hp_space = hyperparameter_space_hinge
+            hp_space = make_hyperparameter_space_hinge(search_hidden_dim)
         elif loss_form == "classification":
-            hp_space = hyperparameter_space_classification
+            hp_space = make_hyperparameter_space_classification(search_hidden_dim)
 
         trainer.hyperparameter_search(
             direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
