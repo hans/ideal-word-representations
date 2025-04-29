@@ -53,6 +53,18 @@ English = {
 	'HH Y', 'V Y', 'TH Y', 'M Y', 'S P Y', 'S K Y', 'G Y', 'HH W', '']
 }
 
+EnglishIPA = {
+	'consonants': ['b', 'tʃ', 'd', 'ð', 'f', 'g', 'h', 'dʒ', 'k', 'l', 'm', 'n',
+	'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v', 'w', 'j', 'z', 'ʒ'],
+	'vowels': ['ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɜ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'ə'],
+	'onsets': ['p', 't', 'k', 'b', 'd', 'g', 'f', 'v', 'θ', 'ð', 's', 'z', 'ʃ', 'tʃ', 'dʒ', 'm',
+	'n', 'ɹ', 'l', 'h', 'w', 'j', 'ʃ', 'pɹ', 'tɹ', 'kɹ', 'bɹ', 'dɹ', 'gɹ', 'fɹ',
+	'θɹ', 'ʃɹ', 'pl', 'kl', 'bl', 'gl', 'fl', 'sl', 'tw', 'kw', 'dw',
+	'sw', 'sp', 'st', 'sk', 'sf', 'sm', 'sn', 'gw', 'ʃw', 'spr', 'spl',
+	'stʃr', 'skr', 'skw', 'skl', 'θw', 'ʒ', 'pj', 'kj', 'bj', 'fj',
+	'hj', 'vj', 'θj', 'mj', 'spy', 'sky', 'gy', 'hw', '']
+}
+
 def loadLanguage(filename) :
 	'''This function loads up a language configuration file and returns
 	the configuration to be passed to the syllabify function.'''
