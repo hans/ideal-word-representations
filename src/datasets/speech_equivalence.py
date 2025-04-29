@@ -348,7 +348,7 @@ def make_timit_equivalence_dataset(name: str,
 
     dataset.map(process_item, with_indices=True, desc="Aligning metadata")
 
-    if minimum_frequency_percentile > 0:
+    if len(group_counts) > 0 and minimum_frequency_percentile > 0:
         # Filter out low-frequency classes
         min_count = np.percentile(np.array(list(group_counts.values())), minimum_frequency_percentile)
 
@@ -358,7 +358,7 @@ def make_timit_equivalence_dataset(name: str,
         print(f"Filtered out {len_before - len_after} classes with fewer than {min_count} frames")
         print(f"Remaining classes: {len_after}")
     
-    if minimum_frequency_count > 0:
+    if len(group_counts) > 0 and minimum_frequency_count > 0:
         if minimum_frequency_percentile > 0 and min_count >= minimum_frequency_count:
             print("Skipping minimum frequency count filtering because minimum frequency percentile set a more stringent criterion")
         else:
