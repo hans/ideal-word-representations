@@ -87,7 +87,7 @@ class BarakeetDataset(datasets.GeneratorBasedBuilder):
             tg = textgrid.TextGrid()
             tg.read(str(textgrid_path))
             
-            words, words_raw, phonemes = [], [], []
+            words, words_raw, phonemes = None, None, []
             transcript = ""
 
             for tier in tg:
@@ -114,6 +114,26 @@ class BarakeetDataset(datasets.GeneratorBasedBuilder):
                     ]
                 elif "transcript" in tier.name.lower():
                     transcript = " ".join(i.mark.strip() for i in tier if i.mark.strip())
+
+            if words is None:
+                # induce single word from the phoneme span. later annotations didn't explicitly
+                # include the word
+                word_start = min(p["start"] for p in phonemes)
+                word_stop = max(p["stop"] for p in phonemes)
+                words = [
+                    {
+                        "start": word_start,
+                        "stop": word_stop,
+                        "utterance": f"{lexical_item}-{grade_adjusted}",
+                    }
+                ]
+                words_raw = [
+                    {
+                        "start": word_start,
+                        "stop": word_stop,
+                        "utterance": f"{lexical_item}",
+                    }
+                ]
 
             yield file_id, {
                 "file": str(wav_path),
