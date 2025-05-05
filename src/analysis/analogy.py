@@ -380,7 +380,8 @@ def run_experiment_equiv_level(
         gt_distance = dists[valid_flat_idxs].min().item()
 
         if verbose:
-            for dist, (label_idx, instance_idx, _) in zip(dists[sorted_indices[:5]], references_src[sorted_indices[:5]]):
+            log_k = 100
+            for dist, (label_idx, instance_idx, _) in zip(dists[sorted_indices[:log_k]], references_src[sorted_indices[:log_k]]):
                 print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']}: {state_space_spec.labels[label_idx]} {instance_idx}")
 
         nearest_neighbor = references_src[sorted_indices[0]]

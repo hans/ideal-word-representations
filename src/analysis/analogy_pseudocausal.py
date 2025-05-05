@@ -29,8 +29,8 @@ def prepare_prediction_equivalences(cuts_df, cut_phonemic_forms, cohort, next_ph
         .query("description == @next_phoneme")
 
     # next-phoneme weak: match next phoneme, but allow predicting that phoneme frame
-    # or any future frame of the word
-    matches_next_phoneme_weak = cuts_df.query("frame_idx >= @cohort_length").merge(
+    # or any frame of the word
+    matches_next_phoneme_weak = cuts_df.merge(
         matches_next_phoneme.traj_flat_idx.rename("next_phoneme_flat_idx"),
         how="inner", left_index=True, right_index=True
     )
@@ -349,8 +349,8 @@ def run_experiment_equiv_level(
             }
 
         if verbose:
-            for dist, (label_idx, instance_idx, _) in zip(dists[sorted_indices[:5]], references_src[sorted_indices[:5]]):
-                print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} {evaluation}: {state_space_spec.labels[label_idx]} {instance_idx}")
+            for flat_idx, dist, (label_idx, instance_idx, _) in zip(sorted_indices[:5], dists[sorted_indices], references_src[sorted_indices]):
+                print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} {state_space_spec.labels[label_idx]} {instance_idx} {flat_idx} {dist.item()}")
 
         # Merge into a single flat dictionary
         results_i = {}
