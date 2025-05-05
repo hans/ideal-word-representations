@@ -2,6 +2,7 @@ from dataclasses import replace
 from functools import partial
 import logging 
 from pathlib import Path
+from typing import Optional
 
 import datasets
 from omegaconf import DictConfig, OmegaConf
@@ -50,38 +51,44 @@ def prepare_neg_dataset(equiv_dataset: SpeechEquivalenceDataset,
     return num_examples, train_dataset, eval_dataset, target_length
 
 
-def make_hyperparameter_space(search_hidden_dim: bool = True):
+def make_hyperparameter_space(fixed_hidden_dim: Optional[int] = None):
     def hyperparameter_space(trial):
         ret = {
             "learning_rate": tune.loguniform(1e-5, 1e-1),
             "weight_decay": tune.loguniform(1e-5, 1e-1),
             "tau": tune.loguniform(1e-3, 1),
         }
-        if search_hidden_dim:
+        if fixed_hidden_dim is None:
             ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        else:
+            ret["hidden_dim"] = fixed_hidden_dim
         return ret
     return hyperparameter_space
 
-def make_hyperparameter_space_hinge(search_hidden_dim: bool = True):
+def make_hyperparameter_space_hinge(fixed_hidden_dim: Optional[int] = None):
     def hyperparameter_space_hinge(trial):
         ret = {
             "learning_rate": tune.loguniform(1e-5, 1e-1),
             "weight_decay": tune.loguniform(1e-5, 1e-1),
             "margin": tune.loguniform(1e-3, 1),
         }
-        if search_hidden_dim:
+        if fixed_hidden_dim is None:
             ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        else:
+            ret["hidden_dim"] = fixed_hidden_dim
         return ret
     return hyperparameter_space_hinge
 
-def make_hyperparameter_space_classification(search_hidden_dim: bool = True):
+def make_hyperparameter_space_classification(fixed_hidden_dim: Optional[int] = None):
     def hyperparameter_space_classification(trial):
         ret = {
             "learning_rate": tune.loguniform(1e-5, 1e-1),
             "weight_decay": tune.loguniform(1e-5, 1e-1),
         }
-        if search_hidden_dim:
+        if fixed_hidden_dim is None:
             ret["hidden_dim"] = tune.choice([32, 64, 128, 256])
+        else:
+            ret["hidden_dim"] = fixed_hidden_dim
         return ret
     return hyperparameter_space_classification
 
@@ -148,6 +155,11 @@ def train(config: DictConfig):
         L.warning("Overriding Trainer learning rate with config value from model config: %g", model_learning_rate)
         config.training_args.learning_rate = model_learning_rate
 
+    # DEV
+    L.warning("Overriding eval_steps, save_steps")
+    config.training_args.eval_steps = 200
+    config.training_args.save_steps = 200
+
     training_args = transformers.TrainingArguments(
         use_cpu=config.device == "cpu",
         output_dir=HydraConfig.get().runtime.output_dir,
@@ -178,12 +190,12 @@ def train(config: DictConfig):
     if trainer_mode == "train":
         trainer.train()
     elif trainer_mode == "hyperparameter_search":
-        search_hidden_dim = model_config.num_layers > 0
-        hp_space = make_hyperparameter_space(search_hidden_dim)
+        fixed_hidden_dim = model_config.hidden_dim if model_config.num_layers == 0 else None
+        hp_space = make_hyperparameter_space(fixed_hidden_dim)
         if loss_form == "hinge":
-            hp_space = make_hyperparameter_space_hinge(search_hidden_dim)
+            hp_space = make_hyperparameter_space_hinge(fixed_hidden_dim)
         elif loss_form == "classification":
-            hp_space = make_hyperparameter_space_classification(search_hidden_dim)
+            hp_space = make_hyperparameter_space_classification(fixed_hidden_dim)
 
         trainer.hyperparameter_search(
             direction=HYPERPARAMETER_OBJECTIVE_DIRECTION,
