@@ -962,7 +962,7 @@ def _compute_analogy_inputs(wildcards, pseudocausal=False, identity=True, flat=T
     }
 
     if not identity:
-        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.train_dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
 
     if flat:
         return list(ret.values())
@@ -975,9 +975,9 @@ rule run_analogy_experiment:
         lambda wildcards: _compute_analogy_inputs(wildcards, identity=False)
 
     output:
-        outdir = directory("outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
-        notebook = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
-        results = "outputs/analogy/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+        outdir = directory("outputs/analogy/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}"),
+        notebook = "outputs/analogy/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/run.ipynb",
+        results = "outputs/analogy/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/experiment_results.csv",
 
     resources:
         gpu = 1
