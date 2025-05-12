@@ -1,5 +1,5 @@
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-HTTP = HTTPRemoteProvider()
+storage:
+    provider = "http"
 
 
 LIBRISPREECH_URL_FORMAT = "https://www.openslr.org/resources/12/{split}.tar.gz"
@@ -8,7 +8,7 @@ LIBRISPEECH_ALIGNMENTS_URL = "https://zenodo.org/records/2619474/files/librispee
 
 rule download_librispeech_raw:
     input:
-        lambda wildcards: HTTP.remote(LIBRISPREECH_URL_FORMAT.format(split=wildcards.split)),
+        lambda wildcards: storage.http(LIBRISPREECH_URL_FORMAT.format(split=wildcards.split)),
     output:
         directory("data/librispeech/{split}")
     shell:
@@ -21,10 +21,10 @@ rule download_librispeech_raw:
         """
 
 
-rule download_librispeech_alignments:
-    input: HTTP.remote(LIBRISPEECH_ALIGNMENTS_URL),
-    output: "data/librispeech_alignments"
-    shell: "unzip -d {output} {input}"
+# rule download_librispeech_alignments:
+#     input: HTTP.remote(LIBRISPEECH_ALIGNMENTS_URL),
+#     output: "data/librispeech_alignments"
+#     shell: "unzip -d {output} {input}"
 
 
 rule preprocess_librispeech:
