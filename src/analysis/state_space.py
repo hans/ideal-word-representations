@@ -555,6 +555,12 @@ def prepare_state_trajectory(
     return ret
 
 
+def get_trajectory_lengths(trajectory: list[np.ndarray]) -> np.ndarray:
+    return [np.isnan(traj_i[:, :, 0]).any(axis=1) * np.isnan(traj_i[:, :, 0]).argmax(axis=1) + \
+            ~np.isnan(traj_i[:, :, 0]).any(axis=1) * traj_i.shape[1]
+            for traj_i in trajectory]
+
+
 def make_simple_agg_fn(fn):
     @wraps(fn)
     def agg_fn(xs, *args, **kwargs):
