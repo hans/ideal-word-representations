@@ -63,13 +63,17 @@ def prepare_prediction_equivalences(cuts_df, cut_phonemic_forms, cohort, next_ph
 def iter_equivalences(
         config, all_cross_instances, agg_src: np.ndarray,
         num_samples=100, max_num_vector_samples=250,
+        flat_idx_lookup=None,
         seed=None,):
     
     # Pre-compute lookup from label idx, instance idx to flat idx
     if isinstance(agg_src, torch.Tensor):
         agg_src = agg_src.cpu().numpy()
-    flat_idx_lookup = {(label_idx, instance_idx, phoneme_idx): flat_idx
-                       for flat_idx, (label_idx, instance_idx, phoneme_idx) in enumerate(agg_src)}
+
+    if flat_idx_lookup is None:
+        # not pre-computed    
+        flat_idx_lookup = {(label_idx, instance_idx, phoneme_idx): flat_idx
+                        for flat_idx, (label_idx, instance_idx, phoneme_idx) in enumerate(agg_src)}
 
     if seed is not None:
         np.random.seed(seed)
@@ -211,6 +215,7 @@ def run_experiment_equiv_level(
         state_space_spec, all_cross_instances,
         agg, agg_src,
         cut_phonemic_forms,
+        flat_idx_lookup=None,
         device: str = "cpu",
         verbose=False,
         num_samples=100, max_num_vector_samples=250,
@@ -249,13 +254,15 @@ def run_experiment_equiv_level(
             for key, items in prediction_equivalences.items()
         }
 
-    # move data to device
-    agg = torch.tensor(agg).to(device)
-    agg_src = torch.tensor(agg_src).to(device)
+    if not isinstance(agg, torch.Tensor) or agg.device != torch.device(device):
+        # move data to device
+        agg = torch.tensor(agg).to(device)
+        agg_src = torch.tensor(agg_src).to(device)
     
     results = []
     for sample in iter_equivalences(
             config, all_cross_instances, agg_src,
+            flat_idx_lookup=flat_idx_lookup,
             num_samples=num_samples,
             max_num_vector_samples=max_num_vector_samples,
             seed=seed):
@@ -350,7 +357,7 @@ def run_experiment_equiv_level(
 
         if verbose:
             for flat_idx, dist, (label_idx, instance_idx, _) in zip(sorted_indices[:5], dists[sorted_indices], references_src[sorted_indices]):
-                print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} {state_space_spec.labels[label_idx]} {instance_idx} {flat_idx} {dist.item()}")
+                print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} {state_space_spec.labels[label_idx]} {cut_phonemic_forms.loc[state_space_spec.labels[label_idx]].loc[instance_idx.item()]} {dist.item()}")
 
         # Merge into a single flat dictionary
         results_i = {}
