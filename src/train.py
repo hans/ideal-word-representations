@@ -129,7 +129,7 @@ def train(config: DictConfig):
     elif config.trainer.mode == "no_train":
         total_num_examples = 0
         train_dataset, eval_dataset = None, None
-        config.training_args.evaluation_strategy = None
+        config.training_args.eval_strategy = None
         config.training_args.save_strategy = "no"
         max_length = equiv_dataset.lengths.max().item()
     else:
