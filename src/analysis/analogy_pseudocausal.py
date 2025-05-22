@@ -30,9 +30,9 @@ def prepare_prediction_equivalences(cuts_df, cut_phonemic_forms, cohort, next_ph
 
     # next-phoneme weak: match next phoneme, but allow predicting that phoneme frame
     # or any frame of the word
-    matches_next_phoneme_weak = cuts_df.merge(
+    matches_next_phoneme_weak = cuts_df.join(
         matches_next_phoneme.traj_flat_idx.rename("next_phoneme_flat_idx"),
-        how="inner", left_index=True, right_index=True
+        how="inner"
     )
 
     # matches cohort
