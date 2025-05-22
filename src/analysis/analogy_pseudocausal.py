@@ -22,7 +22,7 @@ def prepare_prediction_equivalences(cuts_df, cut_phonemic_forms, cohort, next_ph
     cohort + next phoneme.
     """
 
-    cohort_length = cohort.count(" ") + 1
+    cohort_length = cohort.count(" ") + 1 if cohort != "" else 0
 
     # next-phoneme strict: match next phoneme
     matches_next_phoneme = cuts_df.xs(cohort_length, level="frame_idx") \
