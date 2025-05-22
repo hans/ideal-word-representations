@@ -75,6 +75,15 @@ def iter_equivalences(
         flat_idx_lookup = {(label_idx, instance_idx, phoneme_idx): flat_idx
                         for flat_idx, (label_idx, instance_idx, phoneme_idx) in enumerate(agg_src)}
 
+    def get_flat_idx(label_idx, instance_idx, phoneme_idx):
+        if phoneme_idx >= 0:
+            return flat_idx_lookup[label_idx, instance_idx, phoneme_idx]
+        elif phoneme_idx == -1:
+            # get frame just preceding word onset
+            return flat_idx_lookup[label_idx, instance_idx, 0] - 1
+        else:
+            raise ValueError(f"Invalid phoneme index: {phoneme_idx}")
+
     if seed is not None:
         np.random.seed(seed)
 
@@ -172,15 +181,15 @@ def iter_equivalences(
 
             # compute individual representation indices
             from_inflected_flat_idx = torch.tensor(
-                [flat_idx_lookup[(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx)]
+                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx)
                  for _, row in rows_from_i.iterrows()])
             # TODO design choice: do we take repr from previous phoneme or averaged over all previous
             # phonemes?
             from_base_flat_idx = torch.tensor(
-                [flat_idx_lookup[(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)]
+                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
                  for _, row in rows_from_i.iterrows()])
             to_base_flat_idx = torch.tensor(
-                [flat_idx_lookup[(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)]
+                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
                  for _, row in rows_to_i.iterrows()])
             
             yield {
@@ -320,6 +329,9 @@ def run_experiment_equiv_level(
 
         evaluation_results = {}
         for evaluation, valid_flat_idxs in evaluations.items():
+            if len(valid_flat_idxs) == 0:
+                continue
+
             nearest_neighbor = references_src[sorted_indices[0]]
 
             # terminology
