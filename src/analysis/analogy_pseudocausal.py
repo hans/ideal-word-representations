@@ -254,14 +254,18 @@ def run_experiment_equiv_level(
             raise ValueError("Cannot specify both `prediction_equivalences` and `include_idxs_in_predictions`")
         if "prediction_equivalence_keys" not in config:
             raise ValueError("`prediction_equivalence_keys` must be specified in `config` if `prediction_equivalences` is provided")
-        
-        prediction_equivalences_tensor = {
-            key: {
-                equiv: torch.tensor(flat_idxs)
-                for equiv, flat_idxs in items.items()
+
+        if any(not isinstance(flat_idxs, torch.Tensor) for items in prediction_equivalences.values()
+               for flat_idxs in items.values()):
+            prediction_equivalences_tensor = {
+                key: {
+                    equiv: torch.tensor(flat_idxs)
+                    for equiv, flat_idxs in items.items()
+                }
+                for key, items in prediction_equivalences.items()
             }
-            for key, items in prediction_equivalences.items()
-        }
+        else:
+            prediction_equivalences_tensor = prediction_equivalences
 
     if not isinstance(agg, torch.Tensor) or agg.device != torch.device(device):
         # move data to device
@@ -368,7 +372,7 @@ def run_experiment_equiv_level(
             }
 
         if verbose:
-            for flat_idx, dist, (label_idx, instance_idx, _) in zip(sorted_indices[:5], dists[sorted_indices], references_src[sorted_indices]):
+            for flat_idx, dist, (label_idx, instance_idx, _) in zip(sorted_indices[:5], dists[sorted_indices[:5]], references_src[sorted_indices[:5]]):
                 print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} {state_space_spec.labels[label_idx]} {cut_phonemic_forms.loc[state_space_spec.labels[label_idx]].loc[instance_idx.item()]} {dist.item()}")
 
         # Merge into a single flat dictionary
