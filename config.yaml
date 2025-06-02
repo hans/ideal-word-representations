@@ -86,6 +86,20 @@ models:
     model: ffff_32-pc-mAP3
     equivalence: word_broad_10frames_fixedlen25
 
+  # feedforward pseudocausal phoneme contrastive model
+  - base_model: w2v2_pc_8
+    dataset: librispeech-train-clean-100
+    model: ffff_32-pc-phon_mAP1
+    equivalence: phoneme_10frames_fixedlen25
+  - base_model: w2v2_pc_8
+    dataset: librispeech-train-clean-100
+    model: ffff_32-pc-phon_mAP2
+    equivalence: phoneme_10frames_fixedlen25
+  - base_model: w2v2_pc_8
+    dataset: librispeech-train-clean-100
+    model: ffff_32-pc-phon_mAP3
+    equivalence: phoneme_10frames_fixedlen25  
+
   # discriminative phoneme model
   - base_model: w2v2_8
     dataset: librispeech-train-clean-100
@@ -204,32 +218,12 @@ encoding:
         - B1
 
   model_comparisons:
-    # - model2: random8-w2v2_8-l2norm
-    #   model1: baseline
-    # - model2: random32-w2v2_8-l2norm
-    #   model1: baseline
-
-    # - model2: phoneme-w2v2_8-l2norm
-    #   model1: baseline
-
-    # librispeech models
-    - model2: ph-ls-word_broad_fixed-w2v2_8-discrim2-l2norm
-      model1: baseline
-    - model2: ph-ls-word_broad-w2v2_8-discrim1-l2norm
-      model1: baseline
-    - model2: ph-ls-word_broad-w2v2_8-discrim2-l2norm
-      model1: baseline
-    - model2: ph-ls-phoneme-w2v2_8-discrim1-l2norm
-      model1: baseline
-    - model2: ph-ls-phoneme-w2v2_8-discrim2-l2norm
-      model1: baseline
-
     # pseudocausal models
-    - model2: ph-ls-pc-word_broad_fixed-w2v2_pc_8-discrim1-l2norm
+    - model2: ph-ls-pc-word_broad_fixed-w2v2_pc_8-ffff-l2norm
       model1: baseline
-    - model2: ph-ls-pc-phoneme_fixed-w2v2_pc_8-discrim1-l2norm
+    - model2: ph-ls-pc-phoneme_fixed-w2v2_pc_8-ffff-l2norm
       model1: baseline
-    - model2: random32-w2v2_pc_8-l2norm
+    - model2: randomff32-w2v2_pc_8-l2norm
       model1: baseline
 
   permutation_tests:
