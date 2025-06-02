@@ -689,7 +689,6 @@ def strf_nested_cv(X, Y, feature_names, feature_shapes, sfreq,
     default_trf_kwargs = {
         "tmin": 0, "tmax": 0.6,
         "fit_intercept": True,
-        "verbose": False,
         "n_jobs": 1,
         "sfreq": sfreq,
     }
