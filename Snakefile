@@ -1279,3 +1279,76 @@ rule run_all_analogy_experiments3:
         expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
 
+
+# pseudocausal broad experiment: prepare inputs
+rule prepare_analogy_inputs_pcb:
+    input:
+        notebook = "notebooks/analogy/pseudocausal_broad/prepare_inputs.ipynb",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_class}_8/state_space_specs.h5",
+
+    output:
+        outdir = directory("outputs/analogy_pseudocausal_broad/inputs/{dataset}/{base_model_class}/{experiment_label}"),
+        notebook = "outputs/analogy_pseudocausal_broad/inputs/{dataset}/{base_model_class}/{experiment_label}/prepare_inputs.ipynb",
+
+        state_space_spec = "outputs/analogy_pseudocausal_broad/inputs/{dataset}/{base_model_class}/{experiment_label}/state_space_spec.h5",
+        instances = "outputs/analogy_pseudocausal_broad/inputs/{dataset}/{base_model_class}/{experiment_label}/instances.csv",
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        ploomber-engine --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p state_space_specs_path {input.state_space_specs} \
+            -p experiment {wildcards.experiment_label}
+        """
+
+
+def _compute_analogy_inputs_pcb(wildcards, identity=True, flat=True):
+    base_model_class = re.sub(r"_[0-9]+$", "", wildcards.base_model_name)
+    ret = {
+        "notebook": "notebooks/analogy/run_pseudocausal_broad_v2.ipynb",
+
+        "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
+        "state_space_specs": f"outputs/analogy_pseudocausal_broad/inputs/{wildcards.dataset}/{base_model_class}/{wildcards.experiment_label}/state_space_spec.h5",
+        "instances": f"outputs/analogy_pseudocausal_broad/inputs/{wildcards.dataset}/{base_model_class}/{wildcards.experiment_label}/instances.csv",
+    }
+
+    if not identity:
+        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.train_dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+
+    if flat:
+        return list(ret.values())
+    else:
+        return ret
+
+
+rule run_analogy_experiment_pcb:
+    input:
+        lambda wildcards: _compute_analogy_inputs_pcb(wildcards, identity=False, flat=True),
+        
+    output:
+        outdir = directory("outputs/analogy_pseudocausal_broad/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{experiment_label}/{dataset}"),
+        notebook = "outputs/analogy_pseudocausal_broad/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{experiment_label}/{dataset}/run.ipynb",
+        results = "outputs/analogy_pseudocausal_broad/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{experiment_label}/{dataset}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs_pcb(wildcards, identity=False, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        ploomber-engine --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p instances_path {inputs[instances]}
+        """)
