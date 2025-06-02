@@ -259,7 +259,7 @@ def run_experiment_equiv_level(
                for flat_idxs in items.values()):
             prediction_equivalences_tensor = {
                 key: {
-                    equiv: torch.tensor(flat_idxs)
+                    equiv: torch.as_tensor(flat_idxs)
                     for equiv, flat_idxs in items.items()
                 }
                 for key, items in prediction_equivalences.items()
@@ -269,8 +269,8 @@ def run_experiment_equiv_level(
 
     if not isinstance(agg, torch.Tensor) or agg.device != torch.device(device):
         # move data to device
-        agg = torch.tensor(agg).to(device)
-        agg_src = torch.tensor(agg_src).to(device)
+        agg = torch.as_tensor(agg).to(device)
+        agg_src = torch.as_tensor(agg_src).to(device)
     
     results = []
     for sample in iter_equivalences(
