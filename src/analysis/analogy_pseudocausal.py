@@ -179,19 +179,26 @@ def iter_equivalences(
             to_base_phones = rows_to_i.base_phones.iloc[0].split()
             to_post_divergence = rows_to_i.post_divergence.iloc[0].split()
 
-            # compute individual representation indices
-            from_inflected_flat_idx = torch.tensor(
-                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx)
-                 for _, row in rows_from_i.iterrows()])
-            # TODO design choice: do we take repr from previous phoneme or averaged over all previous
-            # phonemes?
-            from_base_flat_idx = torch.tensor(
-                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
-                 for _, row in rows_from_i.iterrows()])
-            to_base_flat_idx = torch.tensor(
-                [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
-                 for _, row in rows_to_i.iterrows()])
-            
+            # 20250717 this is occasionally giving indexing errors and I don't
+            # know why. guarding for now
+            try:
+                # compute individual representation indices
+                from_inflected_flat_idx = torch.tensor(
+                    [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx)
+                    for row in rows_from_i.itertuples()])
+                # TODO design choice: do we take repr from previous phoneme or averaged over all previous
+                # phonemes?
+                from_base_flat_idx = torch.tensor(
+                    [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
+                    for row in rows_from_i.itertuples()])
+                to_base_flat_idx = torch.tensor(
+                    [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
+                    for row in rows_to_i.itertuples()])
+            except:
+                # Log something for debugging
+                L.error(f"Error computing flat indices for group {group}, from {from_equiv_label_i} to {to_equiv_label_i}")
+                continue
+
             yield {
                 "group": group,
 
@@ -229,6 +236,7 @@ def run_experiment_equiv_level(
         verbose=False,
         num_samples=100, max_num_vector_samples=250,
         seed=None,
+        smoke_test=False,
         prediction_equivalences: Optional[PredictionEquivalenceCollection] = None,
         exclude_idxs_from_predictions: Optional[dict[int, list[int]]] = None,
         include_idxs_in_predictions: Optional[dict[int, list[int]]] = None):
@@ -246,7 +254,7 @@ def run_experiment_equiv_level(
             `include_idxs_in_predictions` (label indices), with a backup to
             simply matching the single ground truth inflected label.
     """
-    print(experiment_name)
+    tqdm.write(experiment_name)
 
     prediction_equivalences_tensor = None
     if prediction_equivalences is not None:
@@ -279,6 +287,9 @@ def run_experiment_equiv_level(
             num_samples=num_samples,
             max_num_vector_samples=max_num_vector_samples,
             seed=seed):
+
+        if smoke_test:
+            continue
 
         from_inflected_flat_idx = sample["from_inflected_flat_idx"]
         from_base_flat_idx = sample["from_base_flat_idx"]
