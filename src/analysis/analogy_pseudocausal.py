@@ -60,6 +60,19 @@ def prepare_prediction_equivalences(cuts_df, cut_phonemic_forms, cohort, next_ph
     return ret
 
 
+def average_precision_from_ranks(relevant_ranks: torch.Tensor) -> float:
+    """
+    relevant_ranks: 1D tensor of 0-based ranks for all matched / relevant items.
+    Returns AP in [0, 1]. If no relevant items, returns 0.0.
+    """
+    if relevant_ranks.numel() == 0:
+        return 0.0
+    r = torch.sort(relevant_ranks).values.to(torch.float32)  # ascending ranks
+    k = torch.arange(1, r.numel() + 1, device=r.device, dtype=torch.float32)  # 1..|R|
+    precisions_at_hits = k / (r + 1.0)  # precision at each relevant hit
+    return precisions_at_hits.mean().item()
+
+
 def iter_equivalences(
         config, all_cross_instances, agg_src: np.ndarray,
         num_samples=100, max_num_vector_samples=250,
@@ -95,18 +108,18 @@ def iter_equivalences(
     for group, rows in tqdm(grouper, leave=False):
         try:
             if "base_query" in config:
-                rows_from = rows.query(config["base_query"])
+                rows_from = rows.query(config["base_query"], engine="python")
             else:
                 rows_from = rows
 
             if "inflected_query" in config:
-                rows_to = rows.query(config["inflected_query"])
+                rows_to = rows.query(config["inflected_query"], engine="python")
             else:
                 rows_to = rows
 
             if "all_query" in config:
-                rows_from = rows_from.query(config["all_query"])
-                rows_to = rows_to.query(config["all_query"])
+                rows_from = rows_from.query(config["all_query"], engine="python")
+                rows_to = rows_to.query(config["all_query"], engine="python")
 
             inflection_from = rows_from.inflection.iloc[0]
             inflection_to = rows_to.inflection.iloc[0]
@@ -194,9 +207,9 @@ def iter_equivalences(
                 to_base_flat_idx = torch.tensor(
                     [get_flat_idx(row.inflected_idx, row.inflected_instance_idx, row.next_phoneme_idx - 1)
                     for row in rows_to_i.itertuples()])
-            except:
+            except Exception as e:
                 # Log something for debugging
-                L.error(f"Error computing flat indices for group {group}, from {from_equiv_label_i} to {to_equiv_label_i}")
+                L.error(f"Error computing flat indices for group {group}, from {from_equiv_label_i} to {to_equiv_label_i}", exc_info=e)
                 continue
 
             yield {
@@ -222,7 +235,9 @@ def iter_equivalences(
                 
                 "from_inflected_flat_idx": from_inflected_flat_idx,
                 "from_base_flat_idx": from_base_flat_idx,
-                "to_base_flat_idx": to_base_flat_idx,                
+                "to_base_flat_idx": to_base_flat_idx,
+
+                "to_next_phoneme_idx": rows_to_i.next_phoneme_idx.iloc[0],
             }
 
 
@@ -328,6 +343,8 @@ def run_experiment_equiv_level(
             prediction_equivalence_keys = config["prediction_equivalence_keys"]
             prediction_equivalence_keys = tuple(sample[key] for key in prediction_equivalence_keys)
             if prediction_equivalence_keys not in prediction_equivalences_tensor:
+                L.warning(f"Skipping {sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} "
+                          f"because no prediction equivalence keys match: {prediction_equivalence_keys}")
                 continue
 
             for subexperiment, valid_flat_idxs in prediction_equivalences_tensor[prediction_equivalence_keys].items():
@@ -345,6 +362,8 @@ def run_experiment_equiv_level(
         evaluation_results = {}
         for evaluation, valid_flat_idxs in evaluations.items():
             if len(valid_flat_idxs) == 0:
+                L.warning(f"Skipping {sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']} "
+                          f"because no valid flat indices for evaluation {evaluation}")
                 continue
 
             nearest_neighbor = references_src[sorted_indices[0]]
@@ -365,6 +384,8 @@ def run_experiment_equiv_level(
             predicted_instance_idx = nearest_neighbor[1].item()
             predicted_label = state_space_spec.labels[predicted_label_idx]
 
+            average_precision = average_precision_from_ranks(ranks[valid_flat_idxs])
+
             evaluation_results[evaluation] = {
                 "target_rank": target_rank,
                 "target_distance": target_distance,
@@ -380,6 +401,8 @@ def run_experiment_equiv_level(
                 "predicted_phoneme_idx": nearest_neighbor[2].item(),
                 "predicted_label": predicted_label,
                 "predicted_phones": cut_phonemic_forms.loc[predicted_label].loc[predicted_instance_idx],
+
+                "average_precision": average_precision,
             }
 
         if verbose:
