@@ -5,6 +5,8 @@ datasets:
     raw_path: data/timit_raw
   barakeet:
     raw_path: data/barakeet
+  jobs:
+    raw_path: data/jobs
 
 
 models:
