@@ -87,7 +87,7 @@ def join_hydra_overrides(overrides: dict[str, Any]):
 
 rule preprocess:
     input:
-        timit_raw = lambda wildcards: config["datasets"][wildcards.dataset]["raw_path"],
+        timit_raw = lambda wildcards: config["datasets"].get(wildcards.dataset, {"raw_path": []})["raw_path"],
         script = "notebooks/preprocessing/{dataset}.ipynb"
 
     output:
@@ -946,23 +946,40 @@ rule prepare_analogy_inputs:
         """
 
 
-def _compute_analogy_inputs(wildcards, pseudocausal=False, identity=True, flat=True):
+def _compute_analogy_inputs(wildcards, subtype=None, pseudocausal=False,
+                            premade_experiments=False,
+                            identity=True, flat=True):
     base_model_class = re.sub(r"_[0-9]+$", "", wildcards.base_model_name)
+
+    notebook_name = "run"
+    if subtype is not None:
+        notebook_name += f"_{subtype}"
+    if pseudocausal:
+        notebook_name += "_pseudocausal"
+    notebook_name += ".ipynb"
+
+    inputs_dir = "outputs/analogy"
+    if subtype is not None:
+        inputs_dir += f"_{subtype}"
+    inputs_dir += "/inputs"
+
     ret = {
-        "notebook": "notebooks/analogy/run_pseudocausal.ipynb" if pseudocausal \
-            else "notebooks/analogy/run.ipynb",
+        "notebook": f"notebooks/analogy/{notebook_name}",
 
         "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
         "state_space_specs": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/state_space_spec.h5",
 
-        "inflection_results": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/inflection_results.parquet",
-        "all_cross_instances": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/all_cross_instances.parquet",
-        "most_common_allomorphs": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/most_common_allomorphs.csv",
-        "false_friends": f"outputs/analogy/inputs/{wildcards.dataset}/{base_model_class}/false_friends.csv",
+        "inflection_results": f"{inputs_dir}/{wildcards.dataset}/{base_model_class}/inflection_results.parquet",
+        "all_cross_instances": f"{inputs_dir}/{wildcards.dataset}/{base_model_class}/all_cross_instances.parquet",
+        "most_common_allomorphs": f"{inputs_dir}/{wildcards.dataset}/{base_model_class}/most_common_allomorphs.csv",
+        "false_friends": f"{inputs_dir}/{wildcards.dataset}/{base_model_class}/false_friends.csv",
     }
 
     if not identity:
         ret["embeddings"] = f"outputs/model_embeddings/{wildcards.train_dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+
+    if premade_experiments:
+        ret["experiments"] = f"{inputs_dir}/{wildcards.dataset}/{wildcards.base_model_name}/experiments.json"
 
     if flat:
         return list(ret.values())
@@ -1003,14 +1020,98 @@ rule run_analogy_experiment:
             -p false_friends_path {inputs[false_friends]}
         """)
 
+def same_word_control_inputs(*args, **kwargs):
+    old_flat = kwargs.get("flat", True)
+    kwargs["flat"] = False
+    ret = _compute_analogy_inputs(*args, **kwargs)
+    ret["notebook"] = "notebooks/analogy/run_same_word_control.ipynb"
+
+    if old_flat:
+        return list(ret.values())
+    else:
+        return ret
+
+rule run_analogy_experiment_same_word_control:
+    input:
+        lambda wildcards: same_word_control_inputs(wildcards, identity=True)
+
+    output:
+        outdir = directory("outputs/analogy/same_word_control/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}"),
+        notebook = "outputs/analogy/same_word_control/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/run.ipynb",
+        results = "outputs/analogy/same_word_control/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/same_word_control_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = same_word_control_inputs(wildcards, identity=False, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
+        """)
+
+rule run_analogy_experiment_same_word_control_identity:
+    input:
+        lambda wildcards: same_word_control_inputs(wildcards)
+
+    output:
+        outdir = directory("outputs/analogy/same_word_control_id/{dataset}/{base_model_name}"),
+        notebook = "outputs/analogy/same_word_control_id/{dataset}/{base_model_name}/run.ipynb",
+        results = "outputs/analogy/same_word_control_id/{dataset}/{base_model_name}/same_word_control_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = same_word_control_inputs(wildcards, identity=True, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        # Copy hidden states to make reading more efficient
+        hs_path=/scratch/jgauthier/{wildcards.base_model_name}-{wildcards.dataset}.h5
+        if [ ! -f $hs_path ]; then
+            cp {inputs[hidden_states]} $hs_path
+        fi
+
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path $hs_path \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path ID \
+            -p inflection_results_path {inputs[inflection_results]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]} \
+            -p most_common_allomorphs_path {inputs[most_common_allomorphs]} \
+            -p false_friends_path {inputs[false_friends]}
+        """)
+
+
 rule run_analogy_experiment_pseudocausal:
     input:
         lambda wildcards: _compute_analogy_inputs(wildcards, pseudocausal=True, identity=False)
 
     output:
-        outdir = directory("outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
-        notebook = "outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
-        results = "outputs/analogy_pc/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+        outdir = directory("outputs/analogy_pc/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}"),
+        notebook = "outputs/analogy_pc/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/run.ipynb",
+        results = "outputs/analogy_pc/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/experiment_results.csv",
 
     resources:
         gpu = 1
@@ -1123,6 +1224,7 @@ rule run_all_analogy_experiments:
         # discrim ff
         expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
+
         # # discrim rnn
         # DEV disable for now
         # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
@@ -1138,9 +1240,24 @@ rule run_all_analogy_experiments:
         # contrastive ff
         expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25",
                base_model=base_models),
+
+        # contrastive ff on same-word controls
+        expand("outputs/analogy/same_word_control/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
+               base_model=base_models),
+
         # contrastive rnn (this is actually an rnn, despite ff label)
         expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
                 base_model=base_models),
+
+        # pseudocausal ff
+        "outputs/analogy_pc/runs/librispeech-train-clean-100/w2v2_8/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
+        # pseudocausal wav2vec
+        "outputs/analogy_pc/runs_id/librispeech-train-clean-100/w2v2_8",
+
+        # held-out ff
+        "outputs/analogy/runs/librispeech-train-clean-100/w2v2_8/ffff_32/word_broad_10frames_fixedlen25/librispeech-test-clean",
+        # held-out wav2vec
+        "outputs/analogy/runs_id/librispeech-test-clean/w2v2_8",
 
 
 
@@ -1351,4 +1468,65 @@ rule run_analogy_experiment_pcb:
             -p state_space_specs_path {inputs[state_space_specs]} \
             -p embeddings_path {inputs[embeddings]} \
             -p instances_path {inputs[instances]}
+        """)
+
+
+rule prepare_analogy_inputs_morph:
+    input:
+        notebook = "notebooks/analogy/prepare_inputs_morph.ipynb",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_class}_8/state_space_specs.h5",
+
+    output:
+        outdir = directory("outputs/analogy_morph/inputs/{dataset}/{base_model_class}"),
+        notebook = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/prepare_inputs.ipynb",
+        state_space_spec = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/state_space_spec.h5",
+
+        inflection_results = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/inflection_results.parquet",
+        all_cross_instances = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/all_cross_instances.parquet",
+        most_common_allomorphs = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/most_common_allomorphs.csv",
+        false_friends = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/false_friends.csv",
+        experiments = "outputs/analogy_morph/inputs/{dataset}/{base_model_class}/experiments.json",
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p state_space_specs_path {input.state_space_specs}
+        """
+
+
+rule run_analogy_experiment_pseudocausal_morph:
+    input:
+        lambda wildcards: _compute_analogy_inputs(wildcards,
+            subtype="morph", premade_experiments=True,
+            pseudocausal=True, identity=False)
+
+    output:
+        outdir = directory("outputs/analogy_morph/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}"),
+        notebook = "outputs/analogy_morph/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/run.ipynb",
+        results = "outputs/analogy_morph/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/experiment_results.csv",
+
+    resources:
+        gpu = 1
+
+    run:
+        # HACK reconstruct inputs in a way that allows us to index them sensibly ><
+        inputs = _compute_analogy_inputs(wildcards, subtype="morph", premade_experiments=True,
+                                         identity=False, flat=False)
+
+        gpu_device = select_gpu_device(wildcards, resources)
+
+        shell("""
+        export CUDA_VISIBLE_DEVICES={gpu_device}
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {inputs[notebook]} {output.notebook} \
+            -p output_dir {output.outdir} \
+            -p hidden_states_path {inputs[hidden_states]} \
+            -p state_space_specs_path {inputs[state_space_specs]} \
+            -p embeddings_path {inputs[embeddings]} \
+            -p experiments_path {inputs[experiments]} \
+            -p all_cross_instances_path {inputs[all_cross_instances]}
         """)
