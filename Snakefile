@@ -1221,9 +1221,9 @@ rule run_all_analogy_experiments:
         # w2v2 hidden state
         expand("outputs/analogy/runs_id/librispeech-train-clean-100/{base_model}",
                 base_model=base_models),
-        # discrim ff
-        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
-                base_model=base_models),
+        # # discrim ff
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
 
         # # discrim rnn
         # DEV disable for now
@@ -1238,16 +1238,16 @@ rule run_all_analogy_experiments:
         #         base_model=base_models),
 
         # contrastive ff
-        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25",
+        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
                base_model=base_models),
 
         # contrastive ff on same-word controls
         expand("outputs/analogy/same_word_control/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
                base_model=base_models),
 
-        # contrastive rnn (this is actually an rnn, despite ff label)
-        expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
-                base_model=base_models),
+        # # contrastive rnn (this is actually an rnn, despite ff label)
+        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
 
         # pseudocausal ff
         "outputs/analogy_pc/runs/librispeech-train-clean-100/w2v2_8/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
@@ -1276,7 +1276,6 @@ rule prepare_analogy_inputs3:
         notebook = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/prepare_inputs.ipynb",
         state_space_spec = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/state_space_spec.h5",
 
-        inflection_results = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/inflection_results.parquet",
         all_cross_instances = "outputs/analogy_v3/inputs/{dataset}/{base_model_class}/all_cross_instances.parquet",
 
     shell:
@@ -1297,12 +1296,11 @@ def _compute_analogy_inputs3(wildcards, identity=True, flat=True):
         "hidden_states": f"outputs/hidden_states/{wildcards.base_model_name}/{wildcards.dataset}.h5",
         "state_space_specs": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/state_space_spec.h5",
 
-        "inflection_results": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/inflection_results.parquet",
         "all_cross_instances": f"outputs/analogy_v3/inputs/{wildcards.dataset}/{base_model_class}/all_cross_instances.parquet",
     }
 
     if not identity:
-        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
+        ret["embeddings"] = f"outputs/model_embeddings/{wildcards.train_dataset}/{wildcards.base_model_name}/{wildcards.model_name}/{wildcards.equivalence_classer}/{wildcards.dataset}.npy"
 
     if flat:
         return list(ret.values())
@@ -1315,9 +1313,9 @@ rule run_analogy_experiment3:
         lambda wildcards: _compute_analogy_inputs3(wildcards, identity=False)
 
     output:
-        outdir = directory("outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/"),
-        notebook = "outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/run.ipynb",
-        results = "outputs/analogy_v3/runs/{dataset}/{base_model_name}/{model_name}/{equivalence_classer}/experiment_results.csv",
+        outdir = directory("outputs/analogy_v3/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}"),
+        notebook = "outputs/analogy_v3/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/run.ipynb",
+        results = "outputs/analogy_v3/runs/{train_dataset}/{base_model_name}/{model_name}/{equivalence_classer}/{dataset}/experiment_results.csv",
 
     resources:
         gpu = 1
@@ -1337,7 +1335,6 @@ rule run_analogy_experiment3:
             -p hidden_states_path {inputs[hidden_states]} \
             -p state_space_specs_path {inputs[state_space_specs]} \
             -p embeddings_path {inputs[embeddings]} \
-            -p inflection_results_path {inputs[inflection_results]} \
             -p all_cross_instances_path {inputs[all_cross_instances]}
         """)
 
@@ -1374,7 +1371,6 @@ rule run_analogy_experiment_identity3:
             -p hidden_states_path $hs_path \
             -p state_space_specs_path {inputs[state_space_specs]} \
             -p embeddings_path ID \
-            -p inflection_results_path {inputs[inflection_results]} \
             -p all_cross_instances_path {inputs[all_cross_instances]}
         """)
 
@@ -1384,17 +1380,22 @@ rule run_all_analogy_experiments3:
         # w2v2 hidden state
         expand("outputs/analogy_v3/runs_id/librispeech-train-clean-100/{base_model}",
                 base_model=base_models),
-        # ff word model
-        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
-                base_model=base_models),
-        # phoneme models
-        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_8-mAP1/phoneme_10frames_fixedlen25",
-                base_model=base_models),
 
-        # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        # contrastive ff
+        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/ffff_32/word_broad_10frames_fixedlen25/librispeech-train-clean-100",
+               base_model=base_models),
+
+        # # ff word model
+        # expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-ff_32/word_broad_10frames_fixedlen25",
         #         base_model=base_models),
-        expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
-                base_model=base_models),
+        # # phoneme models
+        # expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_8-mAP1/phoneme_10frames_fixedlen25",
+        #         base_model=base_models),
+
+        # # expand("outputs/analogy/runs/librispeech-train-clean-100/{base_model}/discrim-rnn_32-mAP1/word_broad_10frames_fixedlen25",
+        # #         base_model=base_models),
+        # expand("outputs/analogy_v3/runs/librispeech-train-clean-100/{base_model}/ff_32/word_broad_10frames_fixedlen25",
+        #         base_model=base_models),
 
 
 # pseudocausal broad experiment: prepare inputs

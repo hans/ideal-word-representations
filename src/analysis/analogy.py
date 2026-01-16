@@ -321,6 +321,19 @@ def iter_equivalences(
             }
 
 
+def average_precision_from_ranks(relevant_ranks: torch.Tensor) -> float:
+    """
+    relevant_ranks: 1D tensor of 0-based ranks for all matched / relevant items.
+    Returns AP in [0, 1]. If no relevant items, returns 0.0.
+    """
+    if relevant_ranks.numel() == 0:
+        return 0.0
+    r = torch.sort(relevant_ranks).values.to(torch.float32)  # ascending ranks
+    k = torch.arange(1, r.numel() + 1, device=r.device, dtype=torch.float32)  # 1..|R|
+    precisions_at_hits = k / (r + 1.0)  # precision at each relevant hit
+    return precisions_at_hits.mean().item()
+
+
 def run_experiment_equiv_level(
         experiment_name, config,
         state_space_spec, all_cross_instances,
@@ -379,8 +392,10 @@ def run_experiment_equiv_level(
         gt_rank = ranks[valid_flat_idxs].min().item()
         gt_distance = dists[valid_flat_idxs].min().item()
 
+        average_precision = average_precision_from_ranks(ranks[valid_flat_idxs])
+
         if verbose:
-            log_k = 100
+            log_k = 5
             for dist, (label_idx, instance_idx, _) in zip(dists[sorted_indices[:log_k]], references_src[sorted_indices[:log_k]]):
                 print(f"{sample['group']} {sample['from_equiv_label_i']} -> {sample['to_equiv_label_i']}: {state_space_spec.labels[label_idx]} {instance_idx}")
 
@@ -400,6 +415,7 @@ def run_experiment_equiv_level(
             "gt_label_idx": sample["inflected_to_idx"],
             "gt_label_rank": gt_rank,
             "gt_distance": gt_distance,
+            "average_precision": average_precision,
         })
 
     return pd.DataFrame(results)
