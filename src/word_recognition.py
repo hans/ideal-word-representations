@@ -138,11 +138,15 @@ class EnsembleModel(torch.nn.Module):
     
     __repr__ = __str__
     
-    def forward(self, inputs, return_variance=False):
+    def forward(self, inputs, log_probability=False, return_variance=False):
         logits_list = [model(inputs, return_logits=True).logits
                        for model in self.models]
         avg_logits = torch.stack(logits_list).mean(dim=0)
-        probabilities = nn.functional.softmax(avg_logits, dim=1)
+
+        if log_probability:
+            probabilities = nn.functional.log_softmax(avg_logits, dim=1)
+        else:
+            probabilities = nn.functional.softmax(avg_logits, dim=1)
 
         if not return_variance:
             return probabilities

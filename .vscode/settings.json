@@ -7,5 +7,6 @@
         "**/.git/index.lock": true,
         "**/.git/index": true,
         "**/outputs/**": true,
-    }
+    },
+    "python.analysis.autoImportCompletions": true
 }
