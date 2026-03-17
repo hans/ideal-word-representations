@@ -28,6 +28,9 @@ rule download_librispeech_raw:
 
 
 rule preprocess_librispeech:
+    # override default preprocess rule
+    priority: 10
+
     input:
         dataset = "data/librispeech/{split}",
         alignments = "data/librispeech_alignments",

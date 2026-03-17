@@ -15,6 +15,12 @@ outputs
 *.mp4
 *.pdf
 *.parquet
+*.npy
+*.ipynb
+*.pth
+*.gz
+*.zip
+*.gif
 
 # transient notebooks
 202*.ipynb

@@ -35,8 +35,19 @@ L = logging.getLogger(__name__)
 @dataclass
 class ContrastiveModelSnapshot:
     """
-    Snapshot of the training environment and output of a contrastive model used
-    for brain encoding.
+    Bundles a trained contrastive probe's outputs with its training environment
+    for use in brain encoding.
+
+    Holds the preprocessed speech dataset (HuggingFace ``Dataset``), frozen
+    wav2vec2 hidden states, the equivalence class dataset used for training,
+    pre-computed probe embeddings (one per frame), and state-space specs.
+    ``feature_spec.state_space`` selects the active state space (e.g.
+    ``"phoneme"``), which determines the granularity at which embeddings are
+    aggregated into encoding features.
+
+    Constructed via ``from_config``, which loads all artifacts from disk.
+    Consumed primarily by ``AlignedECoGDataset`` to align model representations
+    with ECoG recordings.
     """
     # TODO would be nicer to scaffold with Hydra instantiate :)
 
@@ -187,8 +198,30 @@ class AlignedTimeSpan:
 
 class AlignedECoGDataset:
     """
-    Stores alignment between ECoG trials (one trial per sentence) and a
-    contrastive model snapshot (training dataset, hidden states, embeddings, etc.).
+    Aligns ECoG trial data with contrastive model representations across three
+    coordinate systems: seconds, model frames, and ECoG samples.
+
+    ECoG data comes as a Chang Lab ``OutFileWithAnnotations`` — a list of
+    per-trial dicts, one per TIMIT sentence presentation, with keys including
+    ``resp`` (n_electrodes × n_samples), ``name`` (sentence ID), ``dataf``
+    (ECoG sample rate), and ``befaft`` (pre/post-stimulus padding in seconds).
+    Model representations come from a ``ContrastiveModelSnapshot`` which holds
+    wav2vec2 hidden states, trained probe embeddings, and state-space specs for
+    the same TIMIT sentences. Alignment is by sentence name across the two
+    independent recordings.
+
+    The core job is converting between coordinate systems. wav2vec2's
+    convolutional frontend downsamples the 16 kHz audio to ~50 Hz model frames;
+    the compression ratio (frames / audio samples) is computed per sentence and
+    used to map model-frame spans to seconds, which are then converted to ECoG
+    samples using ``dataf``. The ``befaft`` padding offset is added when
+    indexing into the raw ``resp`` array.
+
+    Primary interface: ``iter_trajectories`` yields ``AlignedTimeSpan`` objects
+    for each state-space unit (e.g., each phoneme or word instance) within each
+    trial, giving onset/offset in all three coordinate systems.
+    ``get_trajectory_span`` and ``get_trajectory_spans_for_label`` provide
+    random access by label and instance.
     """
 
     audio_sfreq: int = 16000
@@ -560,6 +593,12 @@ def get_electrode_df(config, subject: str):
 
 
 class TemporalReceptiveField(ReceptiveField):
+    """
+    Thin wrapper around ``mne.decoding.ReceptiveField`` that makes ``score()``
+    return a scalar (mean across electrodes) so the estimator is compatible
+    with scikit-learn's ``GridSearchCV``. The original per-electrode scores
+    are still available via ``score_multidimensional()``.
+    """
 
     def score(self, X, y):
         # parent class returns one score per output
