@@ -6,13 +6,11 @@ dependencies = [
     # HuggingFace
     "transformers",
     "datasets",
-
     # Training / model
     "torch",
     "hydra-core",
     "omegaconf",
     "ray[tune]",
-
     # Numerics / ML
     "numpy",
     "scipy",
@@ -21,35 +19,29 @@ dependencies = [
     "polars",
     "pyarrow",
     "h5py",
-
     # Neural data
     "mne",
     "mat73",
-
     # Speech / audio
     "soundfile",
     "TextGrid",
-
     # NLP utilities
     "lemminflect",
     "IsoScore",
-
     # Workflow / pipelines
     "snakemake",
     "papermill",
     "dask",
-
     # Typing / validation
     "beartype",
     "jaxtyping",
-
     # Visualization
     "matplotlib",
     "seaborn",
-
     # Misc
     "tqdm",
     "pyyaml",
+    "snakemake-storage-plugin-http[dev]>=0.3.1",
 ]
 
 [project.optional-dependencies]
