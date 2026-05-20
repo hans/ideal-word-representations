@@ -1,29 +1,83 @@
 #!/usr/bin/env bash
 # Side-car runner for Montreal Forced Aligner.
-# Ensures the `mfa` conda env exists (built from environment.yml), then
-# executes its arguments inside that env. Used from the Snakefile so MFA
-# stays isolated from the project's uv environment.
+#
+# Backends (set via MFA_BACKEND env var, default: conda):
+#
+#   conda        micromamba env at $MAMBA_ROOT_PREFIX/envs/mfa  (default; x86_64 only)
+#   docker       docker run --rm with repo root + MFA_ROOT_DIR mounted
+#   singularity  singularity/apptainer exec with same mounts (prod path)
+#
+# Docker/Singularity image: override with MFA_DOCKER_IMAGE / MFA_SINGULARITY_IMAGE.
+# Default is the official MFA image: mmcauliffe/montreal-forced-aligner:latest
+#
+# MFA_ROOT_DIR is always pinned inside the repo (.mamba/mfa) so model downloads
+# survive across runs regardless of backend.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MICROMAMBA="${REPO_ROOT}/.tools/micromamba"
-ENV_YML="${REPO_ROOT}/.tools/mfa-env/environment.yml"
-MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${REPO_ROOT}/.mamba}"
-export MAMBA_ROOT_PREFIX
+MFA_BACKEND="${MFA_BACKEND:-conda}"
 
-# Pin MFA's model + temp caches inside the repo so a fresh clone doesn't
-# re-download ~150MB of acoustic + dictionary into the user's home.
+# Model + temp caches inside the repo — consistent across all backends.
 export MFA_ROOT_DIR="${MFA_ROOT_DIR:-${REPO_ROOT}/.mamba/mfa}"
 mkdir -p "${MFA_ROOT_DIR}"
 
-if [[ ! -x "${MICROMAMBA}" ]]; then
-    echo "micromamba binary not found at ${MICROMAMBA}" >&2
+case "${MFA_BACKEND}" in
+
+  docker)
+    MFA_IMAGE="${MFA_DOCKER_IMAGE:-mmcauliffe/montreal-forced-aligner:latest}"
+    echo "[mfa-env] docker backend: ${MFA_IMAGE}" >&2
+    exec docker run --rm \
+      --platform linux/amd64 \
+      -v "${REPO_ROOT}:${REPO_ROOT}" \
+      -v "${MFA_ROOT_DIR}:${MFA_ROOT_DIR}" \
+      -w "${REPO_ROOT}" \
+      -e MFA_ROOT_DIR="${MFA_ROOT_DIR}" \
+      -e KMP_AFFINITY=disabled \
+      -e OMP_NUM_THREADS=1 \
+      "${MFA_IMAGE}" "$@"
+    ;;
+
+  singularity|apptainer)
+    # apptainer is the successor to singularity; prefer it if available.
+    if command -v apptainer &>/dev/null; then
+      RUNTIME=apptainer
+    elif command -v singularity &>/dev/null; then
+      RUNTIME=singularity
+    else
+      echo "[mfa-env] neither apptainer nor singularity found in PATH" >&2
+      exit 1
+    fi
+    MFA_IMAGE="${MFA_SINGULARITY_IMAGE:-docker://mmcauliffe/montreal-forced-aligner:latest}"
+    echo "[mfa-env] ${RUNTIME} backend: ${MFA_IMAGE}" >&2
+    exec "${RUNTIME}" exec \
+      --bind "${REPO_ROOT}:${REPO_ROOT}" \
+      --bind "${MFA_ROOT_DIR}:${MFA_ROOT_DIR}" \
+      --env MFA_ROOT_DIR="${MFA_ROOT_DIR}" \
+      "${MFA_IMAGE}" "$@"
+    ;;
+
+  conda)
+    MICROMAMBA="${REPO_ROOT}/.tools/micromamba"
+    ENV_YML="${REPO_ROOT}/.tools/mfa-env/environment.yml"
+    MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${REPO_ROOT}/.mamba}"
+    export MAMBA_ROOT_PREFIX
+
+    if [[ ! -x "${MICROMAMBA}" ]]; then
+      echo "micromamba binary not found at ${MICROMAMBA}" >&2
+      exit 1
+    fi
+
+    if [[ ! -d "${MAMBA_ROOT_PREFIX}/envs/mfa" ]]; then
+      echo "[mfa-env] Creating mfa env from ${ENV_YML}..." >&2
+      "${MICROMAMBA}" create --yes --file "${ENV_YML}"
+    fi
+
+    exec "${MICROMAMBA}" run -n mfa "$@"
+    ;;
+
+  *)
+    echo "[mfa-env] Unknown MFA_BACKEND='${MFA_BACKEND}'. Choose: conda, docker, singularity" >&2
     exit 1
-fi
+    ;;
 
-if [[ ! -d "${MAMBA_ROOT_PREFIX}/envs/mfa" ]]; then
-    echo "[mfa-env] Creating mfa env from ${ENV_YML}..." >&2
-    "${MICROMAMBA}" create --yes --file "${ENV_YML}"
-fi
-
-exec "${MICROMAMBA}" run -n mfa "$@"
+esac

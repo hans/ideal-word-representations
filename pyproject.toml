@@ -80,9 +80,10 @@ environments = [
 ]
 
 [tool.uv.sources]
-# CPU torch on macOS and Linux/aarch64; CUDA 12.4 only on x86_64 Linux (prod).
+# macOS: default PyPI (arm64 wheels only exist there, not on pytorch-cpu index)
+# Linux/aarch64: pytorch-cpu index (PyPI arm64 Linux wheels are CUDA-only)
+# Linux/x86_64 prod: CUDA 12.4
 torch = [
-    { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
     { index = "pytorch-cpu", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
     { index = "pytorch-cuda124", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]

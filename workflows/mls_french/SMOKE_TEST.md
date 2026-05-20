@@ -106,6 +106,14 @@ invocations are instant.
 - conda-forge resolution timeout → retry; if persistent, check sandbox egress.
 - "command not found: mfa" → env created but MFA not in it; inspect
   `.tools/mfa-env/environment.yml` and re-run after deleting `.mamba/envs/mfa`.
+- **`baumwelch` not installable (linux-aarch64)** → the conda backend cannot resolve
+  MFA on ARM sandboxes. Use the Docker or Singularity backend instead:
+  ```bash
+  MFA_BACKEND=docker .tools/mfa-env/run mfa version      # Docker
+  MFA_BACKEND=singularity .tools/mfa-env/run mfa version  # prod cluster
+  ```
+  All subsequent MFA steps accept the same `MFA_BACKEND=docker` prefix.
+  See `.tools/mfa-env/run` for image override env vars.
 
 ### Step 2 — Download MFA French models
 
