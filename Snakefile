@@ -126,6 +126,7 @@ rule extract_hidden_states:
     run:
         outdir = Path(output[0]).parent
         gpu_device = select_gpu_device(wildcards, resources)
+        device_override = "" if gpu_device is not None else "device=cpu"
 
         shell("""
         export PYTHONPATH=`pwd`
@@ -134,7 +135,8 @@ rule extract_hidden_states:
             hydra.run.dir={outdir} \
             base_model={wildcards.base_model_name} \
             +base_model.hidden_state_path={output} \
-            dataset.processed_data_dir={input.dataset}
+            dataset.processed_data_dir={input.dataset} \
+            {device_override}
         """)
 
 
