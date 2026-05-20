@@ -59,7 +59,13 @@ sys.path.append(FOMO_LIBRARY_PATH)
 def select_gpu_device(wildcards, resources):
     if resources.gpu == 0:
         return None
-    import GPUtil
+    try:
+        import GPUtil
+    except ImportError:
+        # GPUtil requires distutils (removed in Python 3.12) and only works on
+        # Linux with CUDA drivers present. Return None on unsupported platforms
+        # so rules fall back to CUDA_VISIBLE_DEVICES being unset.
+        return None
     available_l = GPUtil.getAvailable(
         order = 'random', limit = resources.gpu,
         maxLoad = 0.01, maxMemory = 0.49, includeNan=False,
