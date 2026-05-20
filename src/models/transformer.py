@@ -6,9 +6,16 @@ from hydra.utils import instantiate
 import transformers
 
 
+SUPPORTED_MODEL_REF_PREFIXES = (
+    "facebook/wav2vec2",
+    "LeBenchmark/wav2vec2",
+)
+
+
 def prepare_processor(config):
-    if "facebook/wav2vec2" not in config.base_model.model_ref:
-        raise NotImplementedError()
+    if not any(p in config.base_model.model_ref for p in SUPPORTED_MODEL_REF_PREFIXES):
+        raise NotImplementedError(
+            f"prepare_processor does not support model_ref={config.base_model.model_ref}")
 
     tokenizer = instantiate(config.tokenizer)
     feature_extractor = instantiate(config.feature_extractor,

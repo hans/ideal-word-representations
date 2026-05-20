@@ -8,6 +8,7 @@ import papermill
 configfile: "config.yaml"
 
 include: "workflows/librispeech/Snakefile"
+include: "workflows/mls_french/Snakefile"
 
 ruleorder:
     run_no_train > run

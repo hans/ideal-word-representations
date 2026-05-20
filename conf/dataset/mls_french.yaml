@@ -1,0 +1,3 @@
+name: mls_french
+processed_data_dir: outputs/preprocessed_data/mls_french-train
+raw_data_dir: data/mls_french

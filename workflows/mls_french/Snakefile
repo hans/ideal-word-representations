@@ -1,0 +1,136 @@
+# MLS French scaffold: download → MFA align → preprocess.
+#
+# Mirrors workflows/librispeech/Snakefile. MFA runs in the side-car conda env
+# defined at .tools/mfa-env/; everything else uses the project's uv env.
+
+MLS_FRENCH_URL = "https://dl.fbaipublicfiles.com/mls/mls_french.tar.gz"
+
+MFA_RUN = ".tools/mfa-env/run"
+MFA_ACOUSTIC = "french_mfa"
+MFA_DICTIONARY = "french_mfa"
+
+
+rule download_mls_french_archive:
+    output:
+        "data/downloads/mls_french.tar.gz"
+    shell:
+        """
+        mkdir -p $(dirname {output})
+        wget --continue -O {output} {MLS_FRENCH_URL}
+        """
+
+
+rule extract_mls_french:
+    # Single extraction produces all three splits. Re-encoding FLAC -> 16 kHz mono
+    # WAV mirrors the librispeech download rule and keeps MFA + the HF audio
+    # decoder on identical inputs.
+    input:
+        "data/downloads/mls_french.tar.gz"
+    output:
+        train = directory("data/mls_french/train"),
+        dev = directory("data/mls_french/dev"),
+        test = directory("data/mls_french/test"),
+    shell:
+        """
+        mkdir -p data/mls_french
+        tar -xzf {input} -C data/
+
+        find data/mls_french -name "*.flac" -print0 | \
+            parallel --bar -0 "ffmpeg -hide_banner -loglevel error -i {{}} -acodec pcm_s16le -ac 1 -ar 16000 {{.}}.wav && rm {{}}"
+        """
+
+
+rule download_mfa_french_models:
+    # `mfa model download` writes into MFA's root dir; the run wrapper pins that
+    # root inside .mamba/envs/mfa so it's reproducible alongside the env itself.
+    output:
+        touch("data/mfa/.french_mfa_models_downloaded")
+    shell:
+        """
+        {MFA_RUN} mfa model download acoustic {MFA_ACOUSTIC}
+        {MFA_RUN} mfa model download dictionary {MFA_DICTIONARY}
+        """
+
+
+rule prepare_mfa_corpus:
+    # Build a corpus tree of (audio symlink, .lab transcript) pairs that MFA can
+    # ingest directly. Leaves the downloaded data tree untouched.
+    input:
+        split_dir = "data/mls_french/{split}"
+    output:
+        corpus_dir = directory("data/mfa_corpus/mls_french/{split}")
+    run:
+        from pathlib import Path
+        split_dir = Path(input.split_dir)
+        out_dir = Path(output.corpus_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        transcripts = {}
+        with (split_dir / "transcripts.txt").open() as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                utt_id, text = line.split("\t", 1)
+                transcripts[utt_id] = text
+
+        audio_root = split_dir / "audio"
+        for wav_path in audio_root.rglob("*.wav"):
+            utt_id = wav_path.stem
+            if utt_id not in transcripts:
+                continue
+            spk, book, _ = utt_id.split("_", 2)
+            dest = out_dir / spk / book
+            dest.mkdir(parents=True, exist_ok=True)
+
+            wav_link = dest / f"{utt_id}.wav"
+            if not wav_link.exists():
+                wav_link.symlink_to(wav_path.resolve())
+
+            lab_path = dest / f"{utt_id}.lab"
+            lab_path.write_text(transcripts[utt_id] + "\n")
+
+
+rule mfa_align_mls_french:
+    input:
+        corpus_dir = "data/mfa_corpus/mls_french/{split}",
+        models_marker = "data/mfa/.french_mfa_models_downloaded"
+    output:
+        alignment_dir = directory("data/mfa_alignments/mls_french/{split}")
+    threads: 8
+    shell:
+        """
+        mkdir -p {output.alignment_dir}
+        {MFA_RUN} mfa align \
+            --clean \
+            --num_jobs {threads} \
+            --output_format long_textgrid \
+            {input.corpus_dir} \
+            {MFA_DICTIONARY} \
+            {MFA_ACOUSTIC} \
+            {output.alignment_dir}
+        """
+
+
+rule preprocess_mls_french:
+    # Overrides the generic `preprocess` rule in the top-level Snakefile for
+    # mls_french-* wildcards (snakemake picks the higher-priority rule).
+    priority: 10
+
+    input:
+        data = "data/mls_french/{split}",
+        alignments = "data/mfa_alignments/mls_french/{split}",
+        notebook = "notebooks/preprocessing/mls_french.ipynb"
+    output:
+        data_path = directory("outputs/preprocessed_data/mls_french-{split}"),
+        notebook_path = "outputs/preprocessing/mls_french-{split}/notebook.ipynb"
+    shell:
+        """
+        mkdir -p $(dirname {output.notebook_path})
+        papermill --log-output {input.notebook} \
+            {output.notebook_path} \
+            -p split {wildcards.split} \
+            -p data_dir {input.data} \
+            -p alignment_dir {input.alignments} \
+            -p out_path {output.data_path}
+        """

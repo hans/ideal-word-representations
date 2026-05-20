@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Side-car runner for Montreal Forced Aligner.
+# Ensures the `mfa` conda env exists (built from environment.yml), then
+# executes its arguments inside that env. Used from the Snakefile so MFA
+# stays isolated from the project's uv environment.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MICROMAMBA="${REPO_ROOT}/.tools/micromamba"
+ENV_YML="${REPO_ROOT}/.tools/mfa-env/environment.yml"
+MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${REPO_ROOT}/.mamba}"
+export MAMBA_ROOT_PREFIX
+
+# Pin MFA's model + temp caches inside the repo so a fresh clone doesn't
+# re-download ~150MB of acoustic + dictionary into the user's home.
+export MFA_ROOT_DIR="${MFA_ROOT_DIR:-${REPO_ROOT}/.mamba/mfa}"
+mkdir -p "${MFA_ROOT_DIR}"
+
+if [[ ! -x "${MICROMAMBA}" ]]; then
+    echo "micromamba binary not found at ${MICROMAMBA}" >&2
+    exit 1
+fi
+
+if [[ ! -d "${MAMBA_ROOT_PREFIX}/envs/mfa" ]]; then
+    echo "[mfa-env] Creating mfa env from ${ENV_YML}..." >&2
+    "${MICROMAMBA}" create --yes --file "${ENV_YML}"
+fi
+
+exec "${MICROMAMBA}" run -n mfa "$@"

@@ -8,6 +8,13 @@ datasets:
   jobs:
     raw_path: data/jobs
 
+  # MLS French: handled by workflows/mls_french/Snakefile (raw_path is unused
+  # by the override rule but kept for documentation / wildcards.dataset lookups)
+  mls_french-train:
+    raw_path: data/mls_french/train
+  mls_french-dev:
+    raw_path: data/mls_french/dev
+
 
 models:
 
@@ -145,8 +152,24 @@ models:
     dataset: librispeech-train-clean-100
     model: randomff_8
     equivalence: random
-  - base_model: w2v2_8    
+  - base_model: w2v2_8
     dataset: librispeech-train-clean-100
+    model: randomff_32
+    equivalence: random
+
+  # MLS French pseudocausal contrastive models. Trained on prod GPUs; the
+  # scaffold here just wires them into the pipeline so `snakemake run_all`
+  # picks them up once raw data + alignments are in place.
+  - base_model: w2v2_pc_fr_8
+    dataset: mls_french-train
+    model: ffff_32-pc-mAP1
+    equivalence: word_broad_10frames_fixedlen25
+  - base_model: w2v2_pc_fr_8
+    dataset: mls_french-train
+    model: ffff_32-pc-phon_mAP1
+    equivalence: phoneme_10frames_fixedlen25
+  - base_model: w2v2_pc_fr_8
+    dataset: mls_french-train
     model: randomff_32
     equivalence: random
 

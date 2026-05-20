@@ -1,0 +1,4 @@
+name: w2v2_pc_fr_8
+model_ref: LeBenchmark/wav2vec2-FR-1K-base
+layer: 8
+pseudo_causal: true
