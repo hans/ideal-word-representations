@@ -41,7 +41,10 @@ dependencies = [
     # Misc
     "tqdm",
     "pyyaml",
-    "snakemake-storage-plugin-http[dev]>=0.3.1",
+    "snakemake-storage-plugin-http>=0.3.1",
+    "ipykernel>=7.2.0",
+    "ipywidgets>=8.1.8",
+    "librosa>=0.11.0",
 ]
 
 [project.optional-dependencies]
