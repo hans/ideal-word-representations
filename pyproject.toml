@@ -32,7 +32,9 @@ dependencies = [
     # Workflow / pipelines
     "snakemake",
     "papermill",
-    "dask",
+    "dask[distributed]",
+    # HDF5-via-pandas (StateSpaceAnalysisSpec.to_hdf5 → pandas.to_hdf needs pytables)
+    "tables",
     # Typing / validation
     "beartype",
     "jaxtyping",

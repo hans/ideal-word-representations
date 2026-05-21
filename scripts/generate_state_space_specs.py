@@ -78,6 +78,68 @@ def compute_word_state_space(dataset: datasets.Dataset,
     return {"word": spec}
 
 
+def compute_word_state_space_no_syllable(
+        dataset: datasets.Dataset,
+        hidden_state_dataset: SpeechHiddenStateDataset,
+        ) -> SpecGroup:
+    """Word-level state space for datasets that lack `word_syllable_detail`.
+
+    Word frame spans come from `word_detail.start/stop`; cuts contain only
+    `level=phoneme` rows (no syllable level). Downstream code that does
+    `cuts.xs("phoneme", level="level")` works unchanged.
+    """
+    frames_by_item = hidden_state_dataset.frames_by_item
+    frame_spans_by_word = defaultdict(list)
+    cuts_df = []
+
+    def process_item(item):
+        start_frame, stop_frame = frames_by_item[item["idx"]]
+        num_frames = stop_frame - start_frame
+
+        compression_ratio = num_frames / len(item["input_values"])
+
+        word_starts = item["word_detail"]["start"]
+        word_stops = item["word_detail"]["stop"]
+        word_utts = item["word_detail"]["utterance"]
+        for i, word in enumerate(word_utts):
+            if not word:
+                continue
+            phonemes = item["word_phonemic_detail"][i]
+            if not phonemes:
+                continue
+
+            word_start_frame = start_frame + int(word_starts[i] * compression_ratio)
+            word_stop_frame = start_frame + int(word_stops[i] * compression_ratio)
+
+            instance_idx = len(frame_spans_by_word[word])
+            frame_spans_by_word[word].append((word_start_frame, word_stop_frame))
+
+            for phoneme in phonemes:
+                cuts_df.append({
+                    "label": word,
+                    "instance_idx": instance_idx,
+                    "level": "phoneme",
+                    "description": phoneme["phone"],
+                    "onset_frame_idx": start_frame + int(phoneme["start"] * compression_ratio),
+                    "offset_frame_idx": start_frame + int(phoneme["stop"] * compression_ratio),
+                    "item_idx": item["idx"],
+                })
+
+    dataset.map(process_item, batched=False)
+
+    words = list(frame_spans_by_word.keys())
+    spans = list(frame_spans_by_word.values())
+
+    spec = StateSpaceAnalysisSpec(
+        total_num_frames=hidden_state_dataset.num_frames,
+        labels=words,
+        target_frame_spans=spans,
+        cuts=pd.DataFrame(cuts_df).set_index(["label", "instance_idx", "level"]).sort_index(),
+    )
+
+    return {"word": spec}
+
+
 def compute_syllable_state_space(dataset: datasets.Dataset,
                                  hidden_state_dataset: SpeechHiddenStateDataset,
                                  ) -> SpecGroup:
@@ -273,6 +335,15 @@ STATE_SPACE_COMPUTERS = {
     "phoneme": compute_phoneme_state_space,
 }
 
+# Subset used when the dataset has no syllabification (e.g. MLS French — no
+# French syllabifier in the preprocessing pipeline). The phoneme state space
+# still works because `compute_phoneme_state_space` reads `word_phonemic_detail`
+# directly, not `word_syllable_detail` — but `syllable_idx` will be missing,
+# which the by_syllable_* variants depend on, so they're dropped too.
+STATE_SPACE_COMPUTERS_NO_SYLLABLE = {
+    "word": compute_word_state_space_no_syllable,
+}
+
 @delayed
 def compute_state_space_spec(name: str, computer, dataset_path, hidden_state_path):
     dataset = cast(datasets.Dataset, datasets.load_from_disk(dataset_path))
@@ -284,12 +355,15 @@ def compute_state_space_spec(name: str, computer, dataset_path, hidden_state_pat
 def main(config: DictConfig):
     dask_client = Client(LocalCluster())
 
+    has_syllables = config.dataset.get("has_syllables", True)
+    computers = STATE_SPACE_COMPUTERS if has_syllables else STATE_SPACE_COMPUTERS_NO_SYLLABLE
+
     # compute in parallel
     dask_results = dask.compute(*[
         compute_state_space_spec(name, computer,
                                  config.dataset.processed_data_dir,
                                  config.base_model.hidden_state_path)
-        for name, computer in STATE_SPACE_COMPUTERS.items()
+        for name, computer in computers.items()
     ])
 
     # ensure no name collisions
