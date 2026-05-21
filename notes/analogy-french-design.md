@@ -5,8 +5,9 @@ Working doc for the French analog of `notebooks/analogy/run.ipynb`. Captured bef
 ## Status
 
 - Sketch approved by user via brainstorming Q&A on 2026-05-21.
-- **Blocked on #2** — needs `word_morph_detail` (per-token UD morph features + CSV-cell strings) on the preprocessed MLS French dataset before the analogy can run.
-- Branch state: `feat/issue-1` rebased onto `origin/wav2vec2-phoneme-models`; `outputs/` is a symlink to the wav2vec2-phoneme-models worktree's outputs (recreate on resume).
+- ~~Blocked on #2~~ — landed at commit 8825e17.
+- **Implemented** on 2026-05-21 in commits 4532942, 7bfeff3, ec22478, 9464b70. End-to-end smoke test passes on `mls_french-dev`. The implementation diverged from the sketch in one place (separate join paths for true_friend vs false_friend rows); section "[all_cross_instances construction](#all_cross_instances-construction)" below reflects the as-shipped design.
+- Branch state: `feat/issue-1` rebased onto `origin/feat/issue-2` (will rebase forward to `origin/wav2vec2-phoneme-models` after PR #3 merges); `outputs/` is a symlink to the wav2vec2-phoneme-models worktree's outputs (recreate on resume).
 
 ## Inputs and what we have
 
@@ -78,14 +79,28 @@ Final schema (one row = one (base_audio_instance, derived_audio_instance, morph_
 | `n_stems`, `total_base_count`, `total_derived_count` | suffix_directions_report | row-level direction support |
 | `base_lemma`, `derived_lemma` | suffix_pairs_top10 | useful for grouping |
 
-### Construction algorithm
+### Construction algorithm (as shipped)
 
-1. **Pre-filter directions report**: keep rows with `n_stems >= 50 AND total_base_count >= 100 AND total_derived_count >= 100`. Yields ~700/1973 (suffix_ipa, base_cell, derived_cell) tuples.
-2. **Join to suffix_pairs**: for each suffix_pairs row, split `base_tags` and `derived_tags` on ` ; ` to get the **set of possible cells** for each side. A directions-report tuple `(b, d)` is *consistent* with the row iff `b ∈ base_tag_set ∧ d ∈ derived_tag_set`. Emit one row per consistent direction.
-3. **Filter to corpus-attested orth pairs**: drop rows where `base_orth` or `derived_orth` are not in `state_space_spec.labels`.
-4. **Pull per-instance morph from `word_morph_detail` (from #2)**: for each `base_orth`, list its `(instance_idx, csv_cell)` pairs from the corpus. Same for `derived_orth`. Restrict to instances whose `csv_cell` equals the row's chosen `base_cell` (or `derived_cell`).
-5. **Cartesian product over surviving instances**: every (base_instance × derived_instance) pair becomes a row. (This is identical to how the English notebook builds its `all_cross_instances`.)
-6. **Attach diagnostic columns** (`base_phones` etc.) and assemble final parquet.
+The implementation has **two distinct join paths** because `false_friend` rows are accidental phonological pairs by definition — they don't appear in `suffix_directions_report.csv`. Forcing them through the directions-report join drops every false_friend row.
+
+**Common prefix (both paths):**
+1. Drop CSV rows with `type == "missing_base"` (we need both sides attested) and rows with missing orths.
+2. Restrict to corpus-attested orth pairs: drop rows where `base_orth` or `derived_orth` not in `state_space_spec.labels`.
+3. Parse `base_tags` / `derived_tags` (` ; `-separated) into per-row `frozenset` tag-sets.
+
+**True-friend path (`type == "true_friend"`):**
+4a. Pre-filter directions report: `n_stems >= 50 AND total_base_count >= 100 AND total_derived_count >= 100`. On the actual data this keeps **173 / 1972** (suffix_ipa, base_cell, derived_cell) tuples.
+4b. Inner-join `tf_rows ⋈ dirs_keep` on `suffix_ipa`.
+4c. Tag-consistency filter: keep rows where `base_cell ∈ row.base_tag_set ∧ derived_cell ∈ row.derived_tag_set`.
+4d. For each surviving (orth_pair, direction) tuple, expand to (base_instance × derived_instance) where the per-token spaCy `csv_cell` equals the chosen `base_cell` / `derived_cell`.
+
+**False-friend path (`type == "false_friend"`):**
+5a. Skip the directions-report join entirely.
+5b. For each false_friend row, enumerate base / derived audio instances whose per-token spaCy `csv_cell` is in the row's `base_tag_set` / `derived_tag_set` respectively. The `base_cell` / `derived_cell` columns are filled from the per-token tag itself (not from a directions-report row).
+5c. Cartesian product of surviving instances becomes rows.
+
+**Merge:**
+6. Concat the two paths, attach `inflection = f"{suffix_ipa}::{base_cell}→{derived_cell}"`, `base_idx`, `inflected_idx`, `base_phones`, `inflected_phones`, `exclude_main = (type == "false_friend")`. Save to `outputs/analogy/inputs/{dataset}/{base_model}/all_cross_instances.parquet`.
 
 ### Homophony handling
 
@@ -163,24 +178,64 @@ for suffix, group in well_attested.groupby("suffix_ipa"):
 
 `MIN_INSTANCES_PER_DIRECTION` is a notebook parameter; expect a small int (5–10) for the dev set, larger for a real run.
 
-## Open questions resolved by #2's output
+## Resolved questions
 
 | Question | Resolution |
 |---|---|
-| What schema does `word_morph_detail` have? | #2's issue body proposes `{upos, morph, csv_cell, lemma, alignment_confidence}` per token. Confirm format matches when #2 lands. |
-| How are alignment failures represented? | `alignment_confidence == "missing"` → `csv_cell = null`. We'll drop those instances in step 4 of `all_cross_instances` construction. |
-| How exhaustive is the UD→CSV cell mapping? | #2 includes a mapping table + unit tests covering the ~92 distinct cells observed in `suffix_pairs_top10.csv`. Cross-check coverage after #2 lands. |
+| What schema does `word_morph_detail` have? | `{upos, morph, csv_cell, lemma, alignment_confidence}` per token, confirmed on disk. |
+| How are alignment failures represented? | `alignment_confidence == "missing"` → `csv_cell = null`. None observed on the dev set (all 405 tokens aligned, 378 exact + 27 fuzzy). |
+| How exhaustive is the UD→CSV cell mapping? | `src/datasets/french_morph.py:ud_features_to_csv_cell` produces alphabetically-sorted pipe-joined strings; spot-checked that the format matches the CSV's. |
+| How should we handle false_friend rows that don't appear in directions_report? | Decision (2026-05-21 brainstorm): separate join path — FF rows skip directions_report and require only per-token tag ∈ row's tag set. Implemented. |
 
-## Implementation order (when resuming #1)
+## Open scientific question
 
-1. **Recreate outputs symlink** to wav2vec2-phoneme-models worktree (see top of this doc).
-2. **Verify #2's output**: load `outputs/preprocessed_data/mls_french-dev/`, confirm `word_morph_detail` is present, spot-check 10 tokens.
-3. **State-space spec**: add `compute_word_state_space_french` to `scripts/generate_state_space_specs.py` (or a sister script). Run, write `outputs/state_space_specs/mls_french-dev/w2v2_pc_fr_8/state_space_specs.h5`.
-4. **prepare_inputs_french.ipynb**: implement the all_cross_instances construction above. Write parquet to `outputs/analogy/inputs/mls_french-dev/w2v2_pc_fr_8/`.
-5. **run_french.ipynb**: load all_cross_instances + state_space_spec + hidden states (no trained probe — use w2v2 hidden states directly via `embeddings_path = "ID"` branch). Build the `experiments` dict, run `analogy.run_experiment_equiv_level` over each, save `experiment_results.csv`.
-6. **Snakefile wiring**: add rules to `Snakefile` for `analogy/inputs` and `analogy/runs` mirroring the English equivalents, with `mls_french-dev` + `w2v2_pc_fr_8` wildcards.
-7. **Smoke test**: run end-to-end. Expect ~10 (base, derived) pairs to flow through; `experiment_results.csv` should have rows, accuracy will be ~chance.
-8. **README/docs**: note in commit message + close-out comment that the dev set is intentionally tiny and the headline numbers come from a larger preprocessed split (future work).
+**Will `false_friend_by_suffix` produce signal at train scale?** On `mls_french-dev` it produces 0 rows, and the FF spot-check in `prepare_inputs_french.ipynb` shows the rejection is **principled**: spaCy consistently resolves homophonous orth forms to the contextually-correct reading (e.g. *fasse* in "que je le **fasse** mourir" tagged as subjunctive verb), but the CSV's FF rows describe alternative readings (e.g. *fasse* as a noun) that rarely surface in actual narrated text.
+
+If FF rows stay near-zero at train scale, the experiment is vestigial and should either be (a) dropped, (b) relaxed to per-orth-only without consulting the CSV's tag interpretation (which is a different scientific claim — comparing "any audio of orth pair" instead of "audio tokens with the FF-claimed morphology"), or (c) re-formulated as a different kind of contrast. **Do not run on train split before eyeballing the FF spot-check on a larger preprocessed dev set.**
+
+## Implementation status
+
+All steps completed on 2026-05-21:
+
+| Step | Status | Commit / File |
+|---|---|---|
+| 1. Recreate outputs symlink on resume | — (resume step, not committed) | `ln -s /Users/jon/.superset/worktrees/e4c3a981-cd98-4323-81d0-358a6fc04641/wav2vec2-phoneme-models/outputs outputs` |
+| 2. Verify `word_morph_detail` from #2 | ✓ verified (405 tokens, 0 missing) | — |
+| 3. State-space spec for MLS French | ✓ committed | 4532942 (`scripts/generate_state_space_specs.py:compute_word_state_space_no_syllable`, `conf/dataset/mls_french.yaml:has_syllables`) |
+| 4. `prepare_inputs_french.ipynb` | ✓ committed | 7bfeff3 |
+| 5. `run_french.ipynb` | ✓ committed | 7bfeff3 + ec22478 |
+| 6. Snakefile wiring | ✓ committed | 9464b70 |
+| 7. End-to-end smoke test | ✓ passed | `snakemake --allowed-rules prepare_analogy_inputs_french run_analogy_experiment_french -- outputs/analogy/runs/mls_french-dev/w2v2_pc_fr_8/experiment_results.csv` |
+| 8. Diagnostics in notebook | ✓ committed | 7bfeff3 (filter decomposition + FF spot-check cells) |
+
+### Smoke-test result summary
+
+- 3 true-friend rows survive end-to-end: (apporte, apportés, e::3sg.ind.pres→pp.masc.pl) ×1; (fut, furent, ʁ::hist.past.3sg→hist.past.3pl) ×2.
+- 0 false-friend rows — see "Open scientific question" above.
+- `experiment_results.csv` is empty (0 rows) because every `group_by` group has <2 distinct (base, inflected) pairs. The notebook handles this gracefully (guarded `correct` assignment).
+
+### Re-running the smoke test (after worktree rebuild)
+
+```bash
+ln -s /Users/jon/.superset/worktrees/e4c3a981-cd98-4323-81d0-358a6fc04641/wav2vec2-phoneme-models/outputs outputs
+mkdir -p data/french_morphology
+gh api -H "Accept: application/vnd.github.v3.raw" repos/cbreiss/SpeechModelMorphology/contents/French/outputs/suffix_directions_report.csv > data/french_morphology/suffix_directions_report.csv
+TOP10_SHA=$(gh api repos/cbreiss/SpeechModelMorphology/contents/French/outputs/suffix_pairs_top10.csv --jq .sha)
+gh api repos/cbreiss/SpeechModelMorphology/git/blobs/$TOP10_SHA --jq .content | base64 -d > data/french_morphology/suffix_pairs_top10.csv
+# Regenerate state-space spec for MLS French dev:
+rm -f outputs/state_space_specs/mls_french-dev/w2v2_pc_fr_8/state_space_specs.h5
+HDF5_USE_FILE_LOCKING=FALSE PYTHONPATH=$(pwd) uv run python scripts/generate_state_space_specs.py \
+  hydra.run.dir=outputs/state_space_specs/mls_french-dev/w2v2_pc_fr_8 \
+  dataset=mls_french base_model=w2v2_pc_fr_8 \
+  dataset.processed_data_dir=outputs/preprocessed_data/mls_french-dev \
+  +base_model.hidden_state_path=outputs/hidden_states/w2v2_pc_fr_8/mls_french-dev.h5 \
+  +analysis.state_space_specs_path=outputs/state_space_specs/mls_french-dev/w2v2_pc_fr_8/state_space_specs.h5
+# Run the analogy rules (--allowed-rules bypasses the raw-audio re-extract that
+# snakemake otherwise insists on chasing through the symlinked outputs):
+uv run snakemake --cores 1 --rerun-incomplete \
+  --allowed-rules prepare_analogy_inputs_french run_analogy_experiment_french \
+  -- outputs/analogy/runs/mls_french-dev/w2v2_pc_fr_8/experiment_results.csv
+```
 
 ## Code reuse
 
