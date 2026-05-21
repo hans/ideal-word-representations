@@ -134,3 +134,39 @@ rule preprocess_mls_french:
             -p alignment_dir {input.alignments} \
             -p out_path {output.data_path}
         """
+
+
+rule tag_morphology_mls_french:
+    # Augments the preprocessed dataset with `word_morph_detail`: per-token
+    # spaCy UD morphology + CSV-cell strings aligned back to MFA word tokens.
+    # Required upstream for the French inflection analogy task (#1) so that
+    # morphologically-ambiguous orthographic forms can be bound to a single
+    # cell per audio instance.
+    #
+    # Snakemake quirk: the rule modifies its input directory in place (no
+    # standalone "morph-augmented" output dir, to match the downstream code's
+    # expectation that the column lives on the main dataset). We therefore
+    # declare a sentinel marker file inside the dataset dir as the rule's
+    # output; the actual dataset swap happens atomically inside the script.
+    priority: 10
+
+    input:
+        dataset = "outputs/preprocessed_data/mls_french-{split}",
+        script = "scripts/tag_morphology_mls_french.py"
+    output:
+        # Marker lives outside the dataset dir because Snakemake refuses to
+        # nest one rule's output inside another's. The script mutates the
+        # dataset dir in place; Snakemake tracks the rule via this sentinel.
+        marker = "outputs/preprocessing/mls_french-{split}/.word_morph_detail.done",
+        report = "outputs/preprocessing/mls_french-{split}/morph_report.json"
+    params:
+        model = "fr_core_news_md"
+    shell:
+        """
+        mkdir -p $(dirname {output.report})
+        python {input.script} \
+            --dataset {input.dataset} \
+            --report {output.report} \
+            --model {params.model}
+        touch {output.marker}
+        """
