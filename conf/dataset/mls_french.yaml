@@ -1,3 +1,8 @@
 name: mls_french
 processed_data_dir: outputs/preprocessed_data/mls_french-train
 raw_data_dir: data/mls_french
+
+# MFA's French dictionary does not include syllabification, so the
+# preprocessing pipeline omits `word_syllable_detail`. Disables syllable +
+# biphone state-space computers in scripts/generate_state_space_specs.py.
+has_syllables: false

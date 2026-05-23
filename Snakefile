@@ -1029,6 +1029,99 @@ rule run_analogy_experiment:
             -p false_friends_path {inputs[false_friends]}
         """)
 
+
+# ---------------------------------------------------------------------------
+# French analogy task (issue #1)
+# Distinct from the English analogy rules because (a) the inputs come from
+# csv-defined morphology rather than POS counts + an inflection_targets list,
+# (b) French preprocessing has no syllables (uses compute_word_state_space_no_
+# syllable), and (c) French uses w2v2-FR hidden states directly with no trained
+# probe — so train_dataset / model_name / equivalence_classer don't apply.
+# ---------------------------------------------------------------------------
+
+rule download_french_morphology_csvs:
+    # Pulls suffix_pairs_top10.csv and suffix_directions_report.csv from the
+    # private cbreiss/SpeechModelMorphology repo via the gh CLI. Requires gh
+    # to be authenticated against an account with read access to that repo.
+    # Large blob (top10 is ~96 MB) — use git blob endpoint to avoid the
+    # contents-API streaming limit.
+    output:
+        suffix_pairs = "data/french_morphology/suffix_pairs_top10.csv",
+        suffix_directions = "data/french_morphology/suffix_directions_report.csv",
+    shell:
+        """
+        mkdir -p data/french_morphology
+        # Look up the blob SHA for the large file (changes with new commits)
+        TOP10_SHA=$(gh api repos/cbreiss/SpeechModelMorphology/contents/French/outputs/suffix_pairs_top10.csv --jq .sha)
+        gh api repos/cbreiss/SpeechModelMorphology/git/blobs/$TOP10_SHA --jq .content | base64 -d > {output.suffix_pairs}
+        gh api -H 'Accept: application/vnd.github.v3.raw' repos/cbreiss/SpeechModelMorphology/contents/French/outputs/suffix_directions_report.csv > {output.suffix_directions}
+        """
+
+
+rule prepare_analogy_inputs_french:
+    input:
+        notebook = "notebooks/analogy/prepare_inputs_french.ipynb",
+        state_space_specs = "outputs/state_space_specs/{dataset}/{base_model_name}/state_space_specs.h5",
+        preprocessed_data = "outputs/preprocessed_data/{dataset}",
+        suffix_pairs = "data/french_morphology/suffix_pairs_top10.csv",
+        suffix_directions = "data/french_morphology/suffix_directions_report.csv",
+
+    output:
+        outdir = directory("outputs/analogy/inputs/{dataset}/{base_model_name}"),
+        notebook = "outputs/analogy/inputs/{dataset}/{base_model_name}/prepare_inputs.ipynb",
+        state_space_spec = "outputs/analogy/inputs/{dataset}/{base_model_name}/state_space_spec.h5",
+        inflection_results = "outputs/analogy/inputs/{dataset}/{base_model_name}/inflection_results.parquet",
+        all_cross_instances = "outputs/analogy/inputs/{dataset}/{base_model_name}/all_cross_instances.parquet",
+
+    wildcard_constraints:
+        dataset = "mls_french-.+",
+        base_model_name = "w2v2_pc_fr_.+",
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p dataset_name {wildcards.dataset} \
+            -p base_model {wildcards.base_model_name} \
+            -p state_space_specs_path {input.state_space_specs} \
+            -p preprocessed_data_path {input.preprocessed_data} \
+            -p suffix_pairs_path {input.suffix_pairs} \
+            -p suffix_directions_path {input.suffix_directions} \
+            -p output_dir {output.outdir}
+        """
+
+
+rule run_analogy_experiment_french:
+    input:
+        notebook = "notebooks/analogy/run_french.ipynb",
+        hidden_states = "outputs/hidden_states/{base_model_name}/{dataset}.h5",
+        state_space_spec = "outputs/analogy/inputs/{dataset}/{base_model_name}/state_space_spec.h5",
+        all_cross_instances = "outputs/analogy/inputs/{dataset}/{base_model_name}/all_cross_instances.parquet",
+
+    output:
+        outdir = directory("outputs/analogy/runs/{dataset}/{base_model_name}"),
+        notebook = "outputs/analogy/runs/{dataset}/{base_model_name}/run.ipynb",
+        results = "outputs/analogy/runs/{dataset}/{base_model_name}/experiment_results.csv",
+
+    wildcard_constraints:
+        dataset = "mls_french-.+",
+        base_model_name = "w2v2_pc_fr_.+",
+
+    shell:
+        """
+        export HDF5_USE_FILE_LOCKING=FALSE
+        papermill --autosave-cell-every 30 --log-output \
+            {input.notebook} {output.notebook} \
+            -p dataset_name {wildcards.dataset} \
+            -p base_model {wildcards.base_model_name} \
+            -p hidden_states_path {input.hidden_states} \
+            -p state_space_spec_path {input.state_space_spec} \
+            -p all_cross_instances_path {input.all_cross_instances} \
+            -p output_dir {output.outdir}
+        """
+
+
 def same_word_control_inputs(*args, **kwargs):
     old_flat = kwargs.get("flat", True)
     kwargs["flat"] = False
