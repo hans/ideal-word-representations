@@ -357,7 +357,7 @@ def compute_state_space_spec(name: str, computer, dataset_path, hidden_state_pat
 def main(config: DictConfig):
     dask_client = Client(LocalCluster())
 
-    has_syllables = config.dataset.get("has_syllables", True)
+    has_syllables = config.dataset.get("has_syllables", False)
     computers = STATE_SPACE_COMPUTERS if has_syllables else STATE_SPACE_COMPUTERS_NO_SYLLABLE
 
     # compute in parallel
