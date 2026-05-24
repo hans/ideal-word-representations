@@ -234,8 +234,10 @@ def compute_phoneme_state_space(dataset: datasets.Dataset,
 
                 frame_spans_by_phoneme[phone["phone"]].append((phone_start_frame, phone_stop_frame))
                 frame_spans_by_phoneme_position[i].append((phone_start_frame, phone_stop_frame))
-                frame_spans_by_syllable_index[phone["syllable_idx"]].append((phone_start_frame, phone_stop_frame))
-                frame_spans_by_phoneme_and_syllable_index[(phone["phone"], phone["syllable_idx"])].append((phone_start_frame, phone_stop_frame))
+
+                if "syllable_idx" in phone:
+                    frame_spans_by_syllable_index[phone["syllable_idx"]].append((phone_start_frame, phone_stop_frame))
+                    frame_spans_by_phoneme_and_syllable_index[(phone["phone"], phone["syllable_idx"])].append((phone_start_frame, phone_stop_frame))
 
     dataset.map(process_item, batched=False)
 
