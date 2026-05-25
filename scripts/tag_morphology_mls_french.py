@@ -256,8 +256,12 @@ def _atomic_save(ds: datasets.Dataset, dataset_path: Path) -> None:
     if dataset_path.exists():
         dataset_path.rename(backup_path)
     tmp_path.rename(dataset_path)
+
     if backup_path.exists():
-        shutil.rmtree(backup_path)
+        try:
+            shutil.rmtree(backup_path)
+        except OSError as e:
+            L.warning("Couldn't remove %s: %s — safe to delete manually", backup_path, e)
 
 
 def main() -> None:
