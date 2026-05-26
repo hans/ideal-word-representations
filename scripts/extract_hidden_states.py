@@ -2,6 +2,7 @@ import datasets
 import pyarrow as pa
 import torch
 from torch.utils.data import DataLoader, Dataset
+from tqdm.auto import tqdm
 import transformers
 
 from beartype import beartype
@@ -170,7 +171,7 @@ def extract_hidden_states(
         per_item_states: dict[int, torch.Tensor] = {}
 
         with torch.inference_mode():
-            for batch in loader:
+            for batch in tqdm(loader, desc="Extracting hidden states"):
                 orig_idxs = batch.pop("orig_idxs")
                 input_values = batch["input_values"].to(device, non_blocking=use_cuda)
                 attention_mask = batch["attention_mask"].to(device, non_blocking=use_cuda)
@@ -253,7 +254,7 @@ def extract_hidden_states(
         }
 
         with torch.inference_mode():
-            for batch in loader:
+            for batch in tqdm(loader, desc="Extracting hidden states (pseudo-causal)"):
                 input_values = batch["input_values"].to(device, non_blocking=use_cuda)
                 attention_mask = batch["attention_mask"].to(device, non_blocking=use_cuda)
 
